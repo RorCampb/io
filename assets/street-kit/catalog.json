@@ -1,0 +1,166 @@
+{
+  "units": "meters",
+  "bounds_basis": "bind pose, Blender axes",
+  "source_up": "+Z",
+  "source_forward": "-Y",
+  "gltf_up": "+Y",
+  "gltf_forward": "+Z",
+  "assets": {
+    "house_cottage": {
+      "file": "house_cottage.glb",
+      "scene": "house_cottage",
+      "bounds_min": [
+        -3.0399999618530273,
+        -2.825000047683716,
+        0.0
+      ],
+      "bounds_max": [
+        3.0399999618530273,
+        2.490000009536743,
+        5.179999828338623
+      ],
+      "dimensions": [
+        6.079999923706055,
+        5.315000057220459,
+        5.179999828338623
+      ],
+      "uniform_import_size": 6.079999923706055,
+      "clips": [],
+      "bytes": 674136,
+      "triangles": 10636,
+      "skins": 0,
+      "animations": []
+    },
+    "house_townhouse": {
+      "file": "house_townhouse.glb",
+      "scene": "house_townhouse",
+      "bounds_min": [
+        -2.740000009536743,
+        -2.9549999237060547,
+        0.0
+      ],
+      "bounds_max": [
+        2.740000009536743,
+        2.490000009536743,
+        7.679999828338623
+      ],
+      "dimensions": [
+        5.480000019073486,
+        5.444999933242798,
+        7.679999828338623
+      ],
+      "uniform_import_size": 7.679999828338623,
+      "clips": [],
+      "bytes": 821960,
+      "triangles": 12688,
+      "skins": 0,
+      "animations": []
+    },
+    "road_straight": {
+      "file": "road_straight.glb",
+      "scene": "road_straight",
+      "bounds_min": [
+        -5.699999809265137,
+        -5.0,
+        -0.3199999928474426
+      ],
+      "bounds_max": [
+        5.699999809265137,
+        5.0,
+        0.23000000417232513
+      ],
+      "dimensions": [
+        11.399999618530273,
+        10.0,
+        0.5499999970197678
+      ],
+      "uniform_import_size": 11.399999618530273,
+      "clips": [],
+      "bytes": 200096,
+      "triangles": 2520,
+      "skins": 0,
+      "animations": []
+    },
+    "street_lamp": {
+      "file": "street_lamp.glb",
+      "scene": "street_lamp",
+      "bounds_min": [
+        -0.22499999403953552,
+        -0.24500000476837158,
+        0.0
+      ],
+      "bounds_max": [
+        1.0049999952316284,
+        0.24500000476837158,
+        3.955000162124634
+      ],
+      "dimensions": [
+        1.229999989271164,
+        0.49000000953674316,
+        3.955000162124634
+      ],
+      "uniform_import_size": 3.955000162124634,
+      "clips": [],
+      "bytes": 89724,
+      "triangles": 1928,
+      "skins": 0,
+      "animations": []
+    },
+    "street_tree": {
+      "file": "street_tree.glb",
+      "scene": "street_tree",
+      "bounds_min": [
+        -1.1157405376434326,
+        -0.7200000286102295,
+        0.0
+      ],
+      "bounds_max": [
+        1.1432934999465942,
+        0.8299999833106995,
+        4.150000095367432
+      ],
+      "dimensions": [
+        2.259034037590027,
+        1.550000011920929,
+        4.150000095367432
+      ],
+      "uniform_import_size": 4.150000095367432,
+      "clips": [],
+      "bytes": 43680,
+      "triangles": 952,
+      "skins": 0,
+      "animations": []
+    },
+    "runner": {
+      "file": "runner.glb",
+      "scene": "runner",
+      "bounds_min": [
+        -0.46700000762939453,
+        -0.26500001549720764,
+        0.00349998427554965
+      ],
+      "bounds_max": [
+        0.46700000762939453,
+        0.19999998807907104,
+        1.9199999570846558
+      ],
+      "dimensions": [
+        0.9340000152587891,
+        0.4650000035762787,
+        1.9164999728091061
+      ],
+      "uniform_import_size": 1.9164999728091061,
+      "clips": [
+        "Collapse",
+        "Run"
+      ],
+      "bytes": 322708,
+      "triangles": 6372,
+      "skins": 1,
+      "animations": [
+        "Collapse",
+        "Run"
+      ]
+    }
+  }
+}

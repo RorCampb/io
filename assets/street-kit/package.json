@@ -1,0 +1,172 @@
+{
+  "format": "io.asset-package",
+  "version": 1,
+  "name": "street-kit",
+  "coordinates": {
+    "units": "meters",
+    "up_axis": "+Y",
+    "handedness": "right",
+    "origin": "authored"
+  },
+  "requires": [
+    "opaque_materials",
+    "skeletal_animation"
+  ],
+  "assets": [
+    {
+      "name": "ground",
+      "builtin": "box",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "cottage",
+      "file": "house_cottage.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "townhouse",
+      "file": "house_townhouse.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "road",
+      "file": "road_straight.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "lamp",
+      "file": "street_lamp.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "tree",
+      "file": "street_tree.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "runner",
+      "file": "runner.glb",
+      "kind": "skinned",
+      "clips": [
+        "Collapse",
+        "Run"
+      ]
+    },
+    {
+      "name": "cottage_low",
+      "file": "lods/house_cottage_low.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "townhouse_low",
+      "file": "lods/house_townhouse_low.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "lamp_low",
+      "file": "lods/street_lamp_low.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "tree_low",
+      "file": "lods/street_tree_low.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "runner_low",
+      "file": "lods/runner_low.glb",
+      "kind": "skinned",
+      "clips": [
+        "Collapse",
+        "Run"
+      ]
+    }
+  ],
+  "appearances": [
+    {
+      "name": "cottage",
+      "base_asset": "cottage",
+      "hysteresis": 0.1,
+      "lods": [
+        {
+          "asset": "cottage",
+          "min_screen_pixels": 250
+        },
+        {
+          "asset": "cottage_low",
+          "min_screen_pixels": 0
+        }
+      ]
+    },
+    {
+      "name": "townhouse",
+      "base_asset": "townhouse",
+      "hysteresis": 0.1,
+      "lods": [
+        {
+          "asset": "townhouse",
+          "min_screen_pixels": 250
+        },
+        {
+          "asset": "townhouse_low",
+          "min_screen_pixels": 0
+        }
+      ]
+    },
+    {
+      "name": "lamp",
+      "base_asset": "lamp",
+      "hysteresis": 0.1,
+      "lods": [
+        {
+          "asset": "lamp",
+          "min_screen_pixels": 250
+        },
+        {
+          "asset": "lamp_low",
+          "min_screen_pixels": 0
+        }
+      ]
+    },
+    {
+      "name": "tree",
+      "base_asset": "tree",
+      "hysteresis": 0.1,
+      "lods": [
+        {
+          "asset": "tree",
+          "min_screen_pixels": 250
+        },
+        {
+          "asset": "tree_low",
+          "min_screen_pixels": 0
+        }
+      ]
+    },
+    {
+      "name": "runner",
+      "base_asset": "runner",
+      "hysteresis": 0.1,
+      "lods": [
+        {
+          "asset": "runner",
+          "min_screen_pixels": 250
+        },
+        {
+          "asset": "runner_low",
+          "min_screen_pixels": 0
+        }
+      ]
+    }
+  ]
+}

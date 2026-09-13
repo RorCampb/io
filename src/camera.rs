@@ -1,175 +1,209 @@
-use crate::space::Vec2;
+#![forbid(unsafe_code)]
+use io_types::{Bounds, Vec3};
+use io_world::Space;
 use std::f32::consts::{FRAC_PI_4, TAU};
 
 #[derive(Clone, Debug)]
 pub struct Camera {
+    target: Vec3,
+    render_distance: f32,
+    zoom: f32,
     yaw: f32,
     pitch: f32,
-    zoom: f32,
-    width: u32,
-    height: u32,
-    axis_a: Vec2,
-    axis_b: Vec2,
-    axis_c: Vec2,
+    width: i32,
+    height: i32,
 }
 
 impl Camera {
-    pub fn new() -> Self {
-        let mut camera = Self {
-            yaw: FRAC_PI_4,
-            pitch: (1.0_f32 / 3.0_f32.sqrt()).asin(),
-            zoom: 1.0,
-            width: 1280,
-            height: 800,
-            axis_a: Vec2::new(0.0, 0.0),
-            axis_b: Vec2::new(0.0, 0.0),
-            axis_c: Vec2::new(0.0, 0.0),
-        };
-        camera.update_axes();
-        camera
+    pub fn target(&self) -> Vec3 {
+        self.target
     }
-
-    pub fn orbit(&mut self, yaw_delta: f32, pitch_delta: f32) -> bool {
-        if !yaw_delta.is_finite() || !pitch_delta.is_finite() {
+    pub fn render_distance(&self) -> f32 {
+        self.render_distance
+    }
+    pub fn set_target(&mut self, target: Vec3) -> bool {
+        if !target.finite() {
             return false;
         }
-        self.yaw = (self.yaw + yaw_delta.rem_euclid(TAU)).rem_euclid(TAU);
-        self.pitch = (self.pitch + pitch_delta).clamp(5.0_f32.to_radians(), 85.0_f32.to_radians());
-        self.update_axes();
+        self.target = target;
         true
     }
-
+    pub fn set_zoom(&mut self, zoom: f32) -> bool {
+        if !zoom.is_finite() || !(0.025..=16.).contains(&zoom) {
+            return false;
+        }
+        self.zoom = zoom;
+        true
+    }
+    pub fn copy_viewport(&mut self, other: &Self) {
+        self.width = other.width;
+        self.height = other.height;
+    }
+    pub fn new(target: Vec3) -> Self {
+        assert!(target.finite(), "camera target must be finite");
+        Self {
+            target,
+            render_distance: 120.,
+            zoom: 1.,
+            yaw: FRAC_PI_4,
+            pitch: (1.0_f32 / 3.0_f32.sqrt()).asin(),
+            width: 1280,
+            height: 800,
+        }
+    }
+    pub fn orbit(&mut self, yaw: f32, pitch: f32) -> bool {
+        if !yaw.is_finite() || !pitch.is_finite() {
+            return false;
+        }
+        self.yaw = (self.yaw + yaw.rem_euclid(TAU)).rem_euclid(TAU);
+        self.pitch = (self.pitch + pitch).clamp(5.0_f32.to_radians(), 85.0_f32.to_radians());
+        true
+    }
     pub fn zoom_by(&mut self, steps: f32) -> bool {
         if !steps.is_finite() {
             return false;
         }
-        self.zoom = (self.zoom * (steps.clamp(-100.0, 100.0) * 0.12).exp()).clamp(0.1, 10.0);
-        self.update_axes();
+        self.zoom = (self.zoom * (steps.clamp(-100., 100.) * 0.12).exp()).clamp(0.025, 16.);
         true
     }
-
-    pub fn set_viewport(&mut self, width: i32, height: i32) -> bool {
-        if width <= 0 || height <= 0 || (self.width == width as u32 && self.height == height as u32)
-        {
+    pub fn set_distance(&mut self, distance: f32) -> bool {
+        if !distance.is_finite() || distance <= 0. {
             return false;
         }
-        self.width = width as u32;
-        self.height = height as u32;
-        self.update_axes();
+        self.render_distance = distance.clamp(8., 20000.);
         true
     }
-
-    pub fn reset(&mut self) {
-        let (width, height) = (self.width, self.height);
-        *self = Self::new();
-        self.width = width;
-        self.height = height;
-        self.update_axes();
+    pub fn set_viewport(&mut self, w: i32, h: i32) -> bool {
+        if w <= 0 || h <= 0 || (w == self.width && h == self.height) {
+            return false;
+        }
+        self.width = w;
+        self.height = h;
+        true
     }
-
-    pub fn project(&self, a: f32, b: f32, c: f32) -> Vec2 {
-        // Orbit and zoom around the normalized volume's center, not an axis endpoint.
-        Vec2::new(self.width as f32 * 0.5, self.height as f32 * 0.5)
-            .add(self.axis_a.scaled(a - 0.5))
-            .add(self.axis_b.scaled(b - 0.5))
-            .add(self.axis_c.scaled(c - 0.5))
+    pub fn basis(&self) -> (Vec3, Vec3, Vec3) {
+        let (s, c) = self.yaw.sin_cos();
+        let (sp, cp) = self.pitch.sin_cos();
+        (
+            Vec3::new(c, -s, 0.),
+            Vec3::new(-s * sp, -c * sp, cp),
+            Vec3::new(s * cp, c * cp, sp),
+        )
     }
-
-    fn update_axes(&mut self) {
-        let fit = (self.width as f32 / 1280.0).min(self.height as f32 / 800.0);
-        let scale = 400.0 * fit * self.zoom;
-        let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
-        let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
-        // Orthographic basis: A/B span the horizontal plane; C points upward.
-        self.axis_a = Vec2::new(cos_yaw, sin_yaw * sin_pitch).scaled(scale);
-        self.axis_b = Vec2::new(-sin_yaw, cos_yaw * sin_pitch).scaled(scale);
-        self.axis_c = Vec2::new(0.0, -cos_pitch).scaled(scale);
+    pub fn pixels_per_unit(&self) -> f32 {
+        16. * self.zoom
+    }
+    /// Orthographic projection of a conservative bounding sphere in logical
+    /// window pixels. Stable across animation, item yaw, and camera translation.
+    pub fn projected_diameter(&self, bounds: Bounds, scale: Vec3) -> f32 {
+        let extent = bounds.extent();
+        let scaled = Vec3::new(extent.x * scale.x, extent.y * scale.y, extent.z * scale.z);
+        2. * scaled.dot(scaled).sqrt() * self.pixels_per_unit()
+    }
+    pub fn half_view(&self) -> (f32, f32) {
+        (
+            self.width as f32 / (2. * self.pixels_per_unit()),
+            self.height as f32 / (2. * self.pixels_per_unit()),
+        )
+    }
+    pub fn pan(&mut self, dx: f32, dy: f32, space: &Space) -> bool {
+        if !dx.is_finite() || !dy.is_finite() {
+            return false;
+        }
+        let (right, _, _) = self.basis();
+        let ground_up = Vec3::new(-self.yaw.sin(), -self.yaw.cos(), 0.);
+        let delta = right.scaled(-dx / self.pixels_per_unit())
+            + ground_up.scaled(dy / (self.pixels_per_unit() * self.pitch.sin()));
+        let target = self.target + delta;
+        if !target.finite() {
+            return false;
+        }
+        self.set_target(space.clamp_target(target))
+    }
+    pub fn sees(&self, bounds: Bounds) -> bool {
+        if !bounds.within_radius(self.target, self.render_distance) {
+            return false;
+        }
+        let (right, up, _) = self.basis();
+        let delta = bounds.center() - self.target;
+        let (hw, hh) = self.half_view();
+        delta.dot(right).abs() <= hw + bounds.projected_radius(right)
+            && delta.dot(up).abs() <= hh + bounds.projected_radius(up)
+    }
+    pub fn clip_from_world(&self) -> [f32; 16] {
+        let (right, up, forward) = self.basis();
+        let (hw, hh) = self.half_view();
+        let r = right.scaled(1. / hw);
+        let u = up.scaled(1. / hh);
+        // Nearer points along the camera-facing axis get smaller OpenGL depth.
+        let f = forward.scaled(-1. / (self.render_distance * 2. + 1024.));
+        [
+            r.x,
+            u.x,
+            f.x,
+            0.,
+            r.y,
+            u.y,
+            f.y,
+            0.,
+            r.z,
+            u.z,
+            f.z,
+            0.,
+            -r.dot(self.target),
+            -u.dot(self.target),
+            -f.dot(self.target),
+            1.,
+        ]
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn near(actual: Vec2, expected: Vec2) {
-        assert!(
-            (actual.x - expected.x).abs() < 0.001,
-            "{actual:?} != {expected:?}"
-        );
-        assert!(
-            (actual.y - expected.y).abs() < 0.001,
-            "{actual:?} != {expected:?}"
-        );
-    }
-
     #[test]
-    fn orbit_and_zoom_keep_volume_center_fixed() {
-        let mut camera = Camera::new();
-        camera.orbit(1.2, 0.3);
-        camera.zoom_by(4.0);
-        near(camera.project(0.5, 0.5, 0.5), Vec2::new(640.0, 400.0));
-        camera.set_viewport(800, 600);
-        near(camera.project(0.5, 0.5, 0.5), Vec2::new(400.0, 300.0));
+    fn camera_matrix_centers_target_and_zoom_scales_view() {
+        let mut c = Camera::new(Vec3::new(5000., 5000., 0.));
+        c.orbit(0.7, 0.2);
+        let m = c.clip_from_world();
+        for row in 0..3 {
+            let v = m[row] * c.target.x
+                + m[4 + row] * c.target.y
+                + m[8 + row] * c.target.z
+                + m[12 + row];
+            assert!(v.abs() < 0.001);
+        }
+        let before = c.half_view().0;
+        c.zoom_by(2.0_f32.ln() / 0.12);
+        assert!((c.half_view().0 - before * 0.5).abs() < 0.001);
+        assert!(!c.orbit(f32::NAN, 0.));
+        assert!(!c.zoom_by(f32::INFINITY));
+        assert!(!c.set_distance(-1.));
     }
-
     #[test]
-    fn zoom_scales_offsets_and_is_reversible() {
-        let mut camera = Camera::new();
-        let before = camera.project(0.2, 0.7, 0.9);
-        camera.zoom_by(2.0_f32.ln() / 0.12);
-        near(
-            camera.project(0.2, 0.7, 0.9),
-            Vec2::new(2.0 * before.x - 640.0, 2.0 * before.y - 400.0),
-        );
-        camera.zoom_by(-2.0_f32.ln() / 0.12);
-        near(camera.project(0.2, 0.7, 0.9), before);
+    fn overflowing_pan_preserves_camera_state() {
+        let mut camera = Camera::new(Vec3::new(10., 10., 0.));
+        camera.set_zoom(0.025);
+        let target = camera.target();
+        let space = Space::new(Vec3::new(100., 100., 100.));
+        assert!(!camera.pan(f32::MAX, f32::MAX, &space));
+        assert_eq!(camera.target(), target);
+        assert!(camera.clip_from_world().iter().all(|v| v.is_finite()));
     }
-
     #[test]
-    fn orbit_reprojects_three_dimensions_and_wraps() {
-        let mut camera = Camera::new();
-        let before = camera.project(1.0, 0.5, 0.5);
-        camera.orbit(TAU, 0.0);
-        near(camera.project(1.0, 0.5, 0.5), before);
-        camera.orbit(std::f32::consts::PI, 0.0);
-        near(
-            camera.project(1.0, 0.5, 0.5),
-            Vec2::new(1280.0 - before.x, 800.0 - before.y),
-        );
-        let bottom = camera.project(0.5, 0.5, 0.0);
-        let top = camera.project(0.5, 0.5, 1.0);
-        assert_eq!(bottom.x, top.x);
-        assert!(top.y < bottom.y);
-    }
-
-    #[test]
-    fn projection_preserves_grid_intersections() {
-        let mut camera = Camera::new();
-        camera.orbit(-0.8, 0.2);
-        camera.zoom_by(3.0);
-        let start = camera.project(0.0, 0.25, 0.75);
-        let end = camera.project(1.0, 0.25, 0.75);
-        near(camera.project(0.5, 0.25, 0.75), start.add(end).scaled(0.5));
-    }
-
-    #[test]
-    fn limits_and_invalid_input_preserve_a_usable_camera() {
-        let mut camera = Camera::new();
-        let before = camera.project(0.0, 0.0, 0.0);
-        assert!(!camera.orbit(f32::NAN, 0.0));
-        assert!(!camera.zoom_by(f32::INFINITY));
-        assert!(!camera.set_viewport(0, 0));
-        near(camera.project(0.0, 0.0, 0.0), before);
-        camera.orbit(f32::MAX, f32::MAX);
-        camera.zoom_by(f32::MAX);
-        assert_eq!(camera.zoom, 10.0);
-        assert!(camera.pitch < std::f32::consts::FRAC_PI_2);
-        camera.zoom_by(-f32::MAX);
-        assert_eq!(camera.zoom, 0.1);
-        assert!(camera.project(1.0, 0.0, 1.0).x.is_finite());
-        camera.set_viewport(900, 700);
-        camera.reset();
-        assert_eq!(camera.zoom, 1.0);
-        near(camera.project(0.5, 0.5, 0.5), Vec2::new(450.0, 350.0));
+    fn bounds_overlapping_view_or_distance_are_not_lost() {
+        let c = Camera::new(Vec3::new(0., 0., 0.));
+        let (right, _, _) = c.basis();
+        let p = right.scaled(c.half_view().0 + 1.);
+        let b = Bounds {
+            min: p - Vec3::new(4., 4., 4.),
+            max: p + Vec3::new(4., 4., 4.),
+        };
+        assert!(c.sees(b));
+        let far = Bounds {
+            min: Vec3::new(500., 500., 0.),
+            max: Vec3::new(501., 501., 1.),
+        };
+        assert!(!c.sees(far));
     }
 }

@@ -1,0 +1,31 @@
+{
+  "seed": 7,
+  "blocks_per_side": 32,
+  "blocks": 1024,
+  "district_width_units": 2048,
+  "total_items": 80446,
+  "counts": {
+    "barrel": 3000,
+    "bench": 4096,
+    "cottage": 3313,
+    "crate": 9000,
+    "ground": 2114,
+    "lamp": 4096,
+    "pine": 23648,
+    "road": 10560,
+    "runner": 8192,
+    "stall_gold": 1498,
+    "stall_red": 1502,
+    "townhouse": 3967,
+    "tree": 5460
+  },
+  "camera": {
+    "target": [
+      0,
+      0,
+      1
+    ],
+    "zoom": 0.025,
+    "render_distance": 1709
+  }
+}
