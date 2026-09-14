@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include "io.h"
 #include "dynamic_buffer.h"
+#include "hud.h"
 
 typedef struct RenderModel {
     uint32_t id;
@@ -12,11 +13,15 @@ typedef struct RenderModel {
     unsigned int topology;
 } RenderModel;
 typedef struct Renderer {
+    Hud hud;
     unsigned int program,solid_program,grid_vao,joint_texture;
     DynamicBuffer instances,grid,joints;
     int max_joint_matrices;
     int matrix_uniform,viewport_uniform,width_uniform;
     int solid_matrix_uniform,joints_uniform;
+    int outline_offset_uniform,outline_mode_uniform,stencil_bits;
+    unsigned int effect_program,effect_vao,effect_vbo;
+    int effect_matrix_uniform,effect_scale_uniform;
     int width,height,drawable_width,drawable_height;
     float pixel_scale;
     RenderModel *models;
@@ -29,4 +34,5 @@ bool renderer_init(Renderer *renderer);
 void renderer_destroy(Renderer *renderer);
 bool renderer_resize(Renderer *renderer,int width,int height,int drawable_width,int drawable_height);
 bool renderer_draw(Renderer *renderer,const IoFrame *frame);
+bool renderer_draw_hud(Renderer *renderer);
 #endif

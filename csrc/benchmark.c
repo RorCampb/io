@@ -44,12 +44,13 @@ static uint64_t growths(const Renderer *r) {
 }
 
 // Preview runs a separate world; inspection after measurement holds the measured world.
-static int inspect_scene(SDL_Window *window,Renderer *r,IoApp *app,double seconds,bool animate) {
+static int inspect_scene(SDL_Window *window,Renderer *r,IoApp *app,double seconds,bool animate,bool hud) {
     SDL_GL_SetSwapInterval(1);
     SDL_SetWindowTitle(window,animate?"io | Preview: Enter to benchmark, Esc to stop":
                                      "io | Benchmark complete: inspect with mouse, Enter for next, Esc to stop");
     double started=now_ms(),previous=started;
     r->frame_uploaded=false;
+    hud_reset(&r->hud);
     while(seconds==0. || now_ms()-started<seconds*1000.) {
         SDL_Event event;
         while(SDL_PollEvent(&event)) {
@@ -67,8 +68,10 @@ static int inspect_scene(SDL_Window *window,Renderer *r,IoApp *app,double second
         IoFrame frame;
         if(!renderer_resize(r,w,h,dw,dh) || !io_app_set_viewport(app,io_app_active_camera(app),w,h) ||
            !io_app_frame(app,io_app_active_camera(app),&frame) || !renderer_draw(r,&frame))return -2;
+        if(hud && !renderer_draw_hud(r))return -2;
         SDL_GL_SwapWindow(window);
         if(SDL_GL_GetSwapInterval()==0)SDL_Delay(16);
+        if(hud)hud_presented(&r->hud,now_ms()/1000.,NULL);
     }
     return 0;
 }
@@ -80,7 +83,7 @@ int benchmark_run(SDL_Window *window,Renderer *r,IoApp *app,const BenchmarkOptio
         IoApp *preview=io_app_new();
         if(!preview)return 1;
         io_app_set_render_distance(preview,io_app_active_camera(preview),20000.f);
-        int result=inspect_scene(window,r,preview,3.,true);
+        int result=inspect_scene(window,r,preview,3.,true,options->hud);
         io_app_free(preview);
         r->frame_uploaded=false;
         if(result<0)return result==-1?130:1;
@@ -89,6 +92,7 @@ int benchmark_run(SDL_Window *window,Renderer *r,IoApp *app,const BenchmarkOptio
         fprintf(stderr,"Benchmark requires swap interval zero: %s\n",SDL_GetError());return 1;
     }
     SDL_SetWindowTitle(window,"io | Measuring benchmark (uncapped); Esc to stop");
+    hud_reset(&r->hud);
     GLint bits=0;
     glGetQueryiv(GL_TIME_ELAPSED,GL_QUERY_COUNTER_BITS,&bits);
     if(bits==0){fprintf(stderr,"GPU timer queries unavailable\n");return 1;}
@@ -134,10 +138,12 @@ int benchmark_run(SDL_Window *window,Renderer *r,IoApp *app,const BenchmarkOptio
         double c=now_ms();
         if(measuring)glBeginQuery(GL_TIME_ELAPSED,queries[index]);
         bool drawn=renderer_draw(r,&frame);
+        if(drawn && options->hud)drawn=renderer_draw_hud(r);
         if(measuring)glEndQuery(GL_TIME_ELAPSED);
         if(!drawn)goto cleanup;
         double d=now_ms();
         SDL_GL_SwapWindow(window);
+        if(options->hud)hud_presented(&r->hud,now_ms()/1000.,NULL);
         double e=now_ms();
         if(measuring)samples[index]=(Sample){
             .update=b-a,.prepare=c-b,.submit=d-c,.frame=e-a,
@@ -161,6 +167,8 @@ int benchmark_run(SDL_Window *window,Renderer *r,IoApp *app,const BenchmarkOptio
             "\"orbit\":%s,\"watch\":%s,\"swap_interval\":0,\"logical_size\":[%d,%d],\"drawable_size\":[%d,%d],\"msaa\":%d,\n",
             count,options->warmup,options->orbit?"true":"false",options->watch?"true":"false",width,height,dw,dh,msaa);
     fprintf(file,"\"renderer\":");json_string(file,(const char *)glGetString(GL_RENDERER));
+    fprintf(file,",\"hud\":%s",options->hud?"true":"false");
+    fprintf(file,",\"simulation_tick_hz\":%u",io_app_tick_hz(app));
     fprintf(file,",\"gl_version\":");json_string(file,(const char *)glGetString(GL_VERSION));
     fprintf(file,",\"scene\":");json_string(file,getenv("IO_SCENE")?getenv("IO_SCENE"):"default");
     fprintf(file,",\n\"throughput_fps\":%.4f,\"wall_ms_including_gpu_drain\":%.4f,"
@@ -190,7 +198,7 @@ int benchmark_run(SDL_Window *window,Renderer *r,IoApp *app,const BenchmarkOptio
     if(ok)fprintf(stderr,"Benchmark: %.1f fps, %u measured frames; %s\n",count*1000./elapsed,count,options->output);
     if(ok && options->watch) {
         fprintf(stderr,"Results saved. Enter continues; Esc stops the sweep.\n");
-        int result=inspect_scene(window,r,app,0.,false);
+        int result=inspect_scene(window,r,app,0.,false,options->hud);
         cancelled=result==-1;
         if(result==-2)ok=false;
     }

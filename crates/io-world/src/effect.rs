@@ -13,7 +13,13 @@ pub struct Damage {
 
 impl Effect for Damage {
     fn apply(&self, target: u64, world: &mut World) -> bool {
-        world.damage(target, self.amount)
+        matches!(
+            world.apply_command(crate::WorldCommand::Damage {
+                target,
+                amount: self.amount
+            }),
+            crate::CommandOutcome::Applied
+        )
     }
 }
 

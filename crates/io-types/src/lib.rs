@@ -2,6 +2,8 @@
 //! Shared geometry types. This crate has no world, asset, or renderer dependencies.
 
 use std::ops::{Add, Sub};
+mod message;
+pub use message::{Envelope, MessageId};
 
 /// Stable visual definition, resolved outside the world crate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,6 +74,26 @@ impl Rotation {
     }
     pub fn xyzw(self) -> [f32; 4] {
         self.0
+    }
+    pub fn integrate(self, angular_velocity: Vec3, dt: f32) -> Result<Self, String> {
+        let step = angular_velocity.scaled(dt);
+        if !step.finite() {
+            return Err("nonfinite angular step".into());
+        }
+        Self::from_xyzw(
+            (glam::Quat::from_scaled_axis(glam::Vec3::new(step.x, step.y, step.z))
+                * glam::Quat::from_array(self.0))
+            .to_array(),
+        )
+    }
+    pub fn angular_velocity_to(self, other: Self, dt: f32) -> Vec3 {
+        let mut delta =
+            glam::Quat::from_array(other.0) * glam::Quat::from_array(self.0).conjugate();
+        if delta.w < 0. {
+            delta = -delta;
+        }
+        let axis = delta.to_scaled_axis() / dt;
+        Vec3::new(axis.x, axis.y, axis.z)
     }
     pub fn rotate(self, v: Vec3) -> Vec3 {
         let p = glam::Quat::from_array(self.0) * glam::Vec3::new(v.x, v.y, v.z);

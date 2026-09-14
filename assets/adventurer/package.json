@@ -1,0 +1,38 @@
+{
+  "format": "io.asset-package",
+  "version": 1,
+  "name": "adventurer",
+  "coordinates": {
+    "units": "meters",
+    "up_axis": "+Y",
+    "handedness": "right",
+    "origin": "authored"
+  },
+  "requires": [
+    "opaque_materials"
+  ],
+  "assets": [
+    {
+      "name": "blue",
+      "file": "blue.glb",
+      "kind": "static",
+      "clips": []
+    },
+    {
+      "name": "red",
+      "file": "red.glb",
+      "kind": "static",
+      "clips": []
+    }
+  ],
+  "appearances": [
+    {
+      "name": "blue",
+      "base_asset": "blue"
+    },
+    {
+      "name": "red",
+      "base_asset": "red"
+    }
+  ]
+}

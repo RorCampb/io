@@ -19,6 +19,17 @@ make release
 ./build/release/io
 ```
 
+For the configurable rigid-body wall-impact demo:
+
+```sh
+./build/release/io --scene assets/physics/impact.json
+```
+
+See [Physics](docs/physics.md) for components, scene generation, headless CPU
+benchmarks, and the limits of the in-house box/sphere solver.
+See [Contact Work Diagnostics](docs/contact-diagnostics.md) for opt-in
+per-iteration correction measurements and the current redundancy findings.
+
 ## Controls
 
 For a large mixed scene, run `./build/release/io --scene assets/district/huge.json`.
@@ -54,7 +65,7 @@ locally rather than for the entire map. C subdivisions are retained as metadata
 for future placement/snapping; they do not change the floor grid.
 
 An item has identity and placement plus optional rendering, durability, movement,
-animation, and depletion-response components. See [Item Components](docs/item-components.md)
+animation, physics, and depletion-response components. See [Item Components](docs/item-components.md)
 for the runtime contracts and legacy scene adapter.
 Its transform is `translation * rotation * scale`. The anchor locates the
 model's authored local origin. Bounds account for rotation
@@ -78,7 +89,53 @@ Spatial-query workload counts are not a frame-rate benchmark.
 
 ## Simulation and Retained State
 
-Rust runs a fixed 30 Hz simulation, advancing route movement and animation clocks.
+For the new WASD/round-based combat prototype, run
+`./build/release/io --scene assets/game/encounter.json`.
+See [Game Prototype](docs/game.md) for controls, `io-game` contracts and physical
+death knockback. Existing scenes remain game-disabled unless they opt in.
+See [Game Plugins](docs/game-plugins.md) for the reusable round framework and
+the separate `io-encounter` example plugin.
+The [1 km2 Village Demo](docs/villages.md) adds terrain-aware wandering, households,
+200 dialogue lines, off-camera NPC schedules and three recruitable companions:
+`./build/release/io --scene assets/villages/world.json`.
+
+Rust runs a configurable fixed-step simulation (30 Hz by default), advancing
+physics, route movement, and animation clocks. Set `"simulation": {"tick_hz": 144}`
+in scene JSON, or override it for the native process with `--tick-hz 144`:
+
+```sh
+./build/release/io --scene assets/physics/brick-blast-200.json --tick-hz 144
+```
+
+The startup rate must be an integer within 4..1000 Hz. One validated Rust
+`SimulationTiming` value derives `dt = 1 / tick_hz`, the worker scheduling period,
+and interpolation. This is a target, not a throughput guarantee: an overloaded
+worker falls below it without changing the physical duration of each tick.
+The CLI override uses `IO_TICK_HZ` and takes precedence over scene configuration;
+headless probes/physics benchmarks read the scene setting, not that environment override.
+There is no live rate switching or automatic timestep adjustment.
+
+Normal interactive sessions run simulation on a dedicated Rust thread and render
+the latest immutable snapshot on the main thread. Late ticks do not accumulate
+unbounded catch-up work: simulation time falls behind wall time, and interpolation
+clamps at the newest state rather than extrapolating. Rendering remains separately
+vsynced to the display. The top-right HUD shows measured FPS, completed simulation
+Hz, snapshot age, and three millisecond metrics; `--no-hud` hides it:
+- `BUDGET`: configured `1000 / tick_hz` (6.944 ms at 144 Hz).
+- `FRAME`: measured average interval between completed presentations, including
+  swap waits and frame pacing. It may include repeated/interpolated world state.
+- `UPDATE`: elapsed wall time divided by the advance in consumed worker tick
+  count over the same sampling window. This measures simulation progress, not
+  solver CPU cost. A running worker with no tick progress shows `STALLED`;
+  synchronous viewers show `SYNC`, not a fictitious worker measurement.
+
+Both measured intervals should be near or below the budget to sustain the
+requested presentation and simulation rates. They are roughly quarter-second
+averages, not worst-case frame/tick latency; consumed snapshots can arrive in
+batches. Values turn red when their rate is more than 1% below target.
+The budget is retained across sampling resets. Physics substeps are not shown.
+A 144 Hz target does not force 144 FPS.
+
 Configured animation events queue gameplay effects; the queue is applied after
 all selected items update. Health and positions remain in world state even when
 the item is not exposed to a renderer. See [Animation Effects](docs/animation-effects.md)
@@ -87,13 +144,17 @@ for the trait boundary, JSON configuration, and a tested damage example.
 The union of all cameras' distance regions, plus followed items, determines active items. An
 item in overlapping regions is updated once per tick. Each defined camera
 currently contributes even when it is not selected in the single window.
-Items outside all camera regions pause unless followed; returning resumes their
+Non-physics items outside all camera regions pause unless followed; returning resumes their
 retained clocks without simulating the missed time. Events from an active source
 can still affect an inactive target. Independent background simulation scheduling
-is not implemented yet.
+is not implemented yet. Physics bodies and their attached behaviors advance
+regardless of camera visibility. Settled contact islands can sleep and wake
+through impacts or moving supports; active physics is not reduced-rate by distance.
 
-Elapsed-time input is capped at 0.25 seconds per call and at eight ticks to
-avoid an unbounded catch-up after a stall. Simulation selection is cached until
+`--single-thread`, captures, and throughput benchmarks use deterministic inline
+stepping. Elapsed-time input is capped at 0.25 seconds per call, with a derived
+catch-up limit of `ceil(tick_hz / 4)` ticks (eight at the default rate).
+Simulation selection is cached until
 camera regions or the spatial index change. Moving items update the spatial index
 and invalidate that selection.
 
@@ -183,7 +244,7 @@ make
 per process. Named skeletal clips support linear and step keys, looping playback,
 and independent per-item clocks. One-shot death playback holds the final pose.
 Clip blending, general action controllers,
-cubic-spline keys, morph animation, and physics are not implemented yet.
+cubic-spline keys, morph animation, and ragdolls are not implemented yet.
 The original `assets/demo.glb` donut and legacy unit-box-normalizing importer are
 retained, but are not the current scene-loading path.
 
@@ -196,10 +257,13 @@ The macOS build uses the
 
 | Crate | Responsibility | Local dependencies |
 | --- | --- | --- |
-| `crates/io-types` | Shared vectors and bounds | None |
-| `crates/io-world` | Items, world units/subdivisions, spatial queries, retained simulation state | `io-types` |
+| `crates/io-types` | Shared vectors, checked rotations, and bounds | None |
+| `crates/io-world` | Items, world units/subdivisions, spatial queries, retained simulation and rigid-body state | `io-types` |
 | `crates/io-assets` | Shared meshes, glTF import, versioned asset delivery contract | `io-types` |
-| `io` (root) | App coordination, cameras, visible frame packets, demo setup, C ABI | All three |
+| `crates/io-game` | Generic plugin lifecycle, checked world access and round state machine | `io-types`, `io-world` |
+| `crates/io-encounter` | Example plugin: combat, NPCs, projectiles and opportunity attacks | `io-game`, `io-types`, `io-world` |
+| `crates/io-village` | Exploration plugin: households, dialogue, schedules, companions and local encounters | `io-game`, `io-encounter`, `io-types`, `io-world` |
+| `io` (root) | App coordination, cameras, visible frame packets, plugin registration/input/HUD, C ABI | Framework crates plus chosen example plugin |
 
 An `Item` lives in `io-world`; its optional `Renderable` component references an
 appearance and visual state using typed IDs from `io-types`. The application resolves them through `src/model.rs`

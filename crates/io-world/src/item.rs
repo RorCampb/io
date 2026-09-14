@@ -8,6 +8,7 @@ use io_types::{Bounds, Rotation, Vec3};
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Item {
     pub id: u64,
+    pub grounded: Option<crate::Grounded>,
     pub transform: Transform,
     pub occupancy: Occupancy,
     pub renderable: Option<Renderable>,
@@ -16,6 +17,8 @@ pub struct Item {
     pub motion: Option<PathMotion>,
     pub animation: Option<AnimationState>,
     pub simulated_ticks: u64,
+    pub physics_body: Option<crate::PhysicsBody>,
+    pub collider: Option<crate::Collider>,
 }
 impl Item {
     pub fn validate(&self) -> Result<(), String> {
@@ -23,6 +26,26 @@ impl Item {
             return Err("item ID must be nonzero".into());
         }
         self.transform.validate()?;
+        if let Some(motor) = self.grounded {
+            motor.validate()?;
+            if self.physics_body.is_some() || self.motion.is_some() {
+                return Err("grounded movement needs exclusive pose ownership".into());
+            }
+        }
+        match (&self.physics_body, &self.collider) {
+            (None, None) => {}
+            (Some(body), Some(collider)) => {
+                body.validate()?;
+                collider.validate()?;
+                if !crate::physics::bounded(self.transform.anchor, 1e6) {
+                    return Err("physics position exceeds supported range".into());
+                }
+                if self.motion.is_some() && body.kind != crate::BodyKind::Kinematic {
+                    return Err("route movement on physics bodies requires kinematic mode".into());
+                }
+            }
+            _ => return Err("physics body and collider must be supplied together".into()),
+        }
         if let Some(renderable) = &self.renderable {
             renderable.validate()?;
         }
@@ -62,6 +85,9 @@ impl Item {
         }
         if response.stop_motion {
             self.motion = None;
+            if let Some(body) = &mut self.physics_body {
+                body.target = None;
+            }
             self.transform.snap();
         }
         match response.animation {
@@ -75,18 +101,24 @@ impl Item {
         }
     }
     pub fn render_pose(&self, alpha: f32) -> (Vec3, Rotation) {
-        if self.motion.is_none() || self.simulated_ticks == 0 {
+        if (self.motion.is_none() && self.physics_body.is_none()) || self.simulated_ticks == 0 {
             (self.transform.anchor, self.transform.rotation)
         } else {
             self.transform.pose(alpha)
         }
     }
+    pub fn interpolates_pose(&self) -> bool {
+        self.simulated_ticks != 0
+            && (self.motion.is_some() || self.physics_body.is_some())
+            && (self.transform.anchor != self.transform.previous_anchor
+                || self.transform.rotation != self.transform.previous_rotation)
+    }
     pub fn transform(&self) -> [f32; 16] {
         self.render_transform(1.)
     }
     pub fn render_transform(&self, alpha: f32) -> [f32; 16] {
-        let (anchor, yaw) = self.render_pose(alpha);
-        self.transform.matrix(anchor, yaw)
+        let (anchor, rotation) = self.render_pose(alpha);
+        self.transform.matrix(anchor, rotation)
     }
     pub fn bounds(&self) -> Bounds {
         self.transform.bounds(self.occupancy.local_bounds)
@@ -99,7 +131,7 @@ impl Item {
             .map_or(self.occupancy.local_bounds, |r| {
                 r.local_bounds.union(self.occupancy.local_bounds)
             });
-        if self.motion.is_none() {
+        if self.motion.is_none() && self.physics_body.is_none() {
             return self.transform.bounds(b);
         }
         let t = &self.transform;

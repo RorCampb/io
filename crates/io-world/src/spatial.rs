@@ -3,7 +3,7 @@ use io_types::{Bounds, Vec3};
 use std::collections::{BTreeMap, HashSet};
 
 const CELL: f32 = 32.;
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SpatialIndex {
     rows: BTreeMap<i32, BTreeMap<i32, Vec<usize>>>,
     large: Vec<(usize, Bounds)>,

@@ -6,6 +6,13 @@ use std::path::Path;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SceneConfig {
+    pub exploration: Option<io_village::Definition>,
+    pub terrain: Option<TerrainConfig>,
+    pub game: Option<io_encounter::GameDefinition>,
+    #[serde(default)]
+    pub simulation: crate::timing::SimulationTiming,
+    #[serde(default)]
+    pub physics: crate::physics_config::PhysicsConfig,
     pub version: u32,
     pub dimensions: [f32; 3],
     pub origin: [f32; 3],
@@ -21,6 +28,8 @@ pub struct SceneConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CameraConfig {
+    #[serde(default)]
+    pub coverage: crate::camera::RenderCoverage,
     pub target: [f32; 3],
     pub zoom: f32,
     pub follow: Option<String>,
@@ -33,6 +42,10 @@ fn default_render_distance() -> f32 {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ItemConfig {
+    pub grounded: Option<GroundedConfig>,
+    pub physics_body: Option<crate::physics_config::BodyConfig>,
+    pub collider: Option<crate::physics_config::ColliderConfig>,
+    pub rotation_xyzw: Option<[f32; 4]>,
     pub name: String,
     pub asset: Option<String>,
     pub appearance: Option<String>,
@@ -106,6 +119,19 @@ impl SceneConfig {
         Ok(scene)
     }
     pub fn validate(&self) -> Result<(), String> {
+        if self.game.is_some() && self.exploration.is_some() {
+            return Err("choose game or exploration plugin".into());
+        }
+        if let Some(exploration) = &self.exploration {
+            exploration.validate()?;
+        }
+        if let Some(terrain) = &self.terrain {
+            terrain.resolve()?;
+        }
+        if let Some(game) = &self.game {
+            game.validate()?;
+        }
+        self.physics.resolve()?;
         if self.version != 1 {
             return Err("unsupported scene version".into());
         }
@@ -126,9 +152,49 @@ impl SceneConfig {
             || !(0.025..=16.).contains(&self.camera.zoom)
             || !self.camera.render_distance.is_finite()
             || !(8.0..=20000.0).contains(&self.camera.render_distance)
+            || !self.camera.coverage.valid()
         {
             return Err("invalid world or camera dimensions".into());
         }
         Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerrainConfig {
+    pub origin: [f32; 2],
+    pub spacing: f32,
+    pub width: usize,
+    pub depth: usize,
+    pub heights: Vec<f32>,
+}
+impl TerrainConfig {
+    pub fn resolve(&self) -> Result<io_world::HeightField, String> {
+        io_world::HeightField::new(
+            self.origin,
+            self.spacing,
+            self.width,
+            self.depth,
+            self.heights.clone(),
+        )
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundedConfig {
+    pub radius: f32,
+    pub height: f32,
+    pub max_slope: f32,
+}
+impl GroundedConfig {
+    pub fn resolve(&self) -> Result<io_world::Grounded, String> {
+        let m = io_world::Grounded {
+            radius: self.radius,
+            height: self.height,
+            max_slope: self.max_slope,
+        };
+        m.validate()?;
+        Ok(m)
     }
 }

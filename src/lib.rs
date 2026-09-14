@@ -5,13 +5,27 @@ mod appearance;
 mod benchmark;
 mod camera;
 mod config;
+mod contact_diagnostics_report;
 mod demo;
+mod game;
 mod model;
 #[cfg(test)]
 mod package_tests;
+mod physics_benchmark;
+mod physics_config;
+#[cfg(test)]
+mod village_tests;
+pub use contact_diagnostics_report::ContactReport;
+pub use physics_benchmark::{
+    benchmark_physics, benchmark_physics_with_diagnostics, PhysicsBenchmark,
+};
 mod projection;
+pub mod timing;
 #[cfg(test)]
 mod variant_tests;
+pub mod worker;
+mod worker_probe;
+pub use worker_probe::{probe_worker, WorkerProbe};
 
 use app::{Action, App, CameraId};
 pub use io_types::Vec3 as IoVec3;
@@ -29,6 +43,7 @@ pub struct ValidationReport {
 pub fn validate_scene(path: &std::path::Path) -> Result<ValidationReport, String> {
     let library = model::ModelLibrary::load(path)?;
     let world = demo::world(&library)?;
+    demo::game(&library, &world)?;
     Ok(ValidationReport {
         meshes: library.models.len(),
         appearances: library.config.appearances.len(),
@@ -38,10 +53,16 @@ pub fn validate_scene(path: &std::path::Path) -> Result<ValidationReport, String
 
 pub fn validate_package(path: &std::path::Path) -> Result<ValidationReport, String> {
     let config = config::SceneConfig {
+        exploration: None,
+        terrain: None,
+        game: None,
+        simulation: timing::SimulationTiming::default(),
+        physics: crate::physics_config::PhysicsConfig::default(),
         version: 1,
         dimensions: [1.; 3],
         origin: [0.; 3],
         camera: config::CameraConfig {
+            coverage: camera::RenderCoverage::Radius,
             target: [0.; 3],
             zoom: 1.,
             follow: None,
@@ -65,6 +86,152 @@ pub fn validate_package(path: &std::path::Path) -> Result<ValidationReport, Stri
 
 pub struct IoApp {
     state: App,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct IoDamageText {
+    pub x: f32,
+    pub y: f32,
+    pub alpha: f32,
+    pub amount: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct IoProjectileView {
+    pub position: IoVec3,
+    pub radius: f32,
+}
+#[repr(C)]
+pub struct IoGameView {
+    pub selected_item: u64,
+    pub enabled: u32,
+    pub free_movement: u32,
+    pub line_count: u32,
+    pub damage_count: u32,
+    pub lines: [[u8; 64]; 12],
+    pub damage: [IoDamageText; 16],
+    pub projectile_count: u32,
+    pub reserved: u32,
+    pub projectiles: [IoProjectileView; 4],
+}
+
+/// Owned presentation text only; rules and validation remain in io-game.
+/// # Safety
+/// app must be null or live without concurrent mutation; out must be separately writable.
+#[no_mangle]
+pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameView) -> bool {
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return false;
+    };
+    *out = IoGameView {
+        selected_item: 0,
+        enabled: 0,
+        free_movement: 0,
+        line_count: 0,
+        lines: [[0; 64]; 12],
+        damage_count: 0,
+        damage: [IoDamageText::default(); 16],
+        projectile_count: 0,
+        reserved: 0,
+        projectiles: [IoProjectileView::default(); 4],
+    };
+    let Some(app) = (unsafe { app.as_ref() }) else {
+        return false;
+    };
+    let game = app.state.game();
+    out.selected_item = app.state.controlled_actor().unwrap_or(0);
+    out.enabled = u32::from(game.enabled());
+    out.free_movement = u32::from(matches!(
+        game.phase(),
+        io_encounter::Phase::Exploration | io_encounter::Phase::Movement { .. }
+    ));
+    for (index, text) in app.state.game_lines().into_iter().take(12).enumerate() {
+        for (dest, byte) in out.lines[index].iter_mut().take(63).zip(text.bytes()) {
+            *dest = if byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b' ' | b'-'
+                        | b'.'
+                        | b'['
+                        | b']'
+                        | b','
+                        | b'\''
+                        | b'"'
+                        | b':'
+                        | b';'
+                        | b'!'
+                        | b'?'
+                        | b'/'
+                        | b'('
+                        | b')'
+                ) {
+                byte
+            } else {
+                b' '
+            };
+        }
+        out.line_count += 1;
+    }
+    if let Some(camera) = app.state.camera(app.state.active_camera()) {
+        for hit in game.damage_numbers().iter().rev().take(16) {
+            let age = (game.time() - hit.created_at) as f32;
+            if let Some((x, y)) = camera.project(hit.position) {
+                out.damage[out.damage_count as usize] = IoDamageText {
+                    x,
+                    y: y - age * 24.,
+                    alpha: (1.5 - age).clamp(0., 1.),
+                    amount: hit.amount,
+                };
+                out.damage_count += 1;
+            }
+        }
+    }
+    if let io_encounter::Phase::Resolving {
+        resolution: projectile,
+        ..
+    } = game.phase()
+    {
+        for i in 0..4 {
+            let t = i as f32 / 3.;
+            out.projectiles[i] = IoProjectileView {
+                position: projectile.position
+                    + (projectile.previous_position - projectile.position).scaled(t),
+                radius: 0.16 * (1. - 0.6 * t),
+            };
+        }
+        out.projectile_count = 4;
+    }
+    true
+}
+
+/// 1 start, 2 screen-relative move, 3 select ability, 4 pass, 5 target, 6 player,
+/// 7 click target (logical pixels), 8 orbit. Attacks only execute on target clicks.
+/// Worker mode returns queue acceptance, not eventual rule acceptance.
+/// # Safety
+/// app must be null or exclusively owned on its calling thread.
+#[no_mangle]
+pub unsafe extern "C" fn io_app_game_action(
+    app: *mut IoApp,
+    kind: u32,
+    slot: u32,
+    x: f32,
+    y: f32,
+) -> bool {
+    if !(1..=11).contains(&kind) || !x.is_finite() || !y.is_finite() {
+        return false;
+    }
+    unsafe { app.as_mut() }.is_some_and(|a| a.state.game_action(kind, slot, x, y))
+}
+#[repr(C)]
+#[derive(Default)]
+pub struct IoWorkerStats {
+    pub tick: u64,
+    pub overruns: u64,
+    pub simulation_ms: f64,
+    pub snapshot_ms: f64,
+    pub snapshot_age_ms: f64,
+    pub status: u32,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -181,6 +348,54 @@ pub extern "C" fn io_app_new() -> *mut IoApp {
             ptr::null_mut()
         }
     }
+}
+
+/// Real-time worker mode. The returned handle still belongs to the calling thread.
+#[no_mangle]
+pub extern "C" fn io_app_new_realtime() -> *mut IoApp {
+    match App::new_threaded() {
+        Ok(state) => Box::into_raw(Box::new(IoApp { state })),
+        Err(error) => {
+            eprintln!("Worker startup failed: {error}");
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Returns the configured target rate, not measured worker throughput; null returns zero.
+/// # Safety
+/// app must be null or live with no concurrent mutation.
+#[no_mangle]
+pub unsafe extern "C" fn io_app_tick_hz(app: *const IoApp) -> u32 {
+    unsafe { app.as_ref() }.map_or(0, |app| app.state.timing().tick_hz())
+}
+
+/// # Safety
+/// app must be null or live with no concurrent mutation; out must be separately writable.
+#[no_mangle]
+pub unsafe extern "C" fn io_app_worker_stats(app: *const IoApp, out: *mut IoWorkerStats) -> bool {
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return false;
+    };
+    *out = IoWorkerStats::default();
+    let Some(worker) = (unsafe { app.as_ref() }).and_then(|a| a.state.worker()) else {
+        return false;
+    };
+    let snapshot = &worker.current;
+    *out = IoWorkerStats {
+        tick: snapshot.tick,
+        overruns: snapshot.overruns,
+        simulation_ms: snapshot.simulation_ms,
+        snapshot_ms: snapshot.snapshot_ms,
+        snapshot_age_ms: snapshot.completed_at.elapsed().as_secs_f64() * 1000.,
+        status: match worker.status() {
+            worker::Status::Running => 1,
+            worker::Status::Stopped => 2,
+            worker::Status::PhysicsFailed => 3,
+            worker::Status::Panicked => 4,
+        },
+    };
+    true
 }
 /// # Safety
 /// Pass null or a live, exclusively accessed app handle, exactly once.
@@ -300,7 +515,7 @@ pub unsafe extern "C" fn io_app_frame(
         return false;
     };
     let target = view.target();
-    let render_distance = view.render_distance();
+    let render_distance = view.render_radius();
     let world_items = app.state.world().items().len() as u64;
     let active_simulations = app.state.active_count() as u64;
     let Some(frame) = app.state.frame(camera) else {

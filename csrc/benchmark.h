@@ -6,7 +6,7 @@
 typedef struct BenchmarkOptions {
     const char *output;
     unsigned int frames, warmup;
-    bool orbit, watch;
+    bool orbit, watch, hud;
 } BenchmarkOptions;
 
 // Exit status: 0 success, 1 failure, 130 cancelled by the viewer.

@@ -171,18 +171,102 @@ static void check_variants(void) {
     puts("PASS: real skinned LOD switching, palette bounds/readback, and retained static GPU meshes");
 }
 
+static void check_hud(void){
+    Renderer r;assert(renderer_init(&r));
+    hud_set_tick_hz(&r.hud,144);
+    assert(renderer_resize(&r,1280,800,1280,800));
+    glClearColor(1,1,1,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);glDisable(GL_BLEND);
+    glUseProgram(0);glBindVertexArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);
+    IoWorkerStats stats={.status=1};hud_presented(&r.hud,10.,&stats);
+    for(unsigned int i=1;i<=30;i++){
+        stats.tick=i/2;hud_presented(&r.hud,10.+(double)i/60.,&stats);
+    }
+    assert(renderer_draw_hud(&r) && r.hud.last_upload_bytes>0);
+    assert(glIsEnabled(GL_DEPTH_TEST) && !glIsEnabled(GL_BLEND));
+    GLint program,vao,buffer;glGetIntegerv(GL_CURRENT_PROGRAM,&program);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING,&vao);glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&buffer);
+    assert(program==0 && vao==0 && buffer==0);
+    unsigned char pixel[4];glReadPixels(1260,780,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]<70 && pixel[1]<70 && pixel[2]<70);
+    glReadPixels(1045,776,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>200 && pixel[1]>150 && pixel[2]<110);
+    // The fourth row's B glyph must be drawn, not clipped by the old panel size.
+    glReadPixels(1045,705,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>200 && pixel[1]>200 && pixel[2]>200);
+    // The measured frame and update rows are below the original four-row panel.
+    glReadPixels(1045,681,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>200 && pixel[1]<150 && pixel[2]<150);
+    glReadPixels(1045,657,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>200 && pixel[1]<150 && pixel[2]<150);
+    assert(renderer_draw_hud(&r) && r.hud.last_upload_bytes==0);
+    assert(renderer_resize(&r,640,400,1280,800));
+    assert(renderer_draw_hud(&r) && r.hud.last_upload_bytes>0);
+    assert(renderer_resize(&r,1280,800,1280,800));
+    IoGameView game={.enabled=1,.free_movement=1,.line_count=2};
+    strcpy(game.lines[0],"ROUND BEGIN [ENTER]");
+    strcpy(game.lines[1],"the road is quiet, isn't it?");
+    hud_set_game(&r.hud,&game);
+    assert(renderer_draw_hud(&r) && r.hud.last_upload_bytes>0);
+    glReadPixels(20,780,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>200 && pixel[1]>150 && pixel[2]<110);
+    /* Lowercase h must produce visible white ink, not a blank dialogue sentence. */
+    glReadPixels(27,763,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>200 && pixel[1]>200 && pixel[2]>200);
+    hud_set_game(&r.hud,&game);
+    assert(renderer_draw_hud(&r) && r.hud.last_upload_bytes==0);
+    renderer_destroy(&r);
+    puts("PASS: HUD pixels, GL state restoration, cached upload, and HiDPI resize");
+}
+
+static void check_game_feedback(void){
+    IoApp *app=io_app_new();assert(app);
+    Renderer r;assert(renderer_init(&r));assert(r.stencil_bits>0);
+    assert(renderer_resize(&r,1280,800,1280,800));
+    IoFrame frame;assert(io_app_frame(app,1,&frame));
+    const size_t bytes=1280*800*4;
+    unsigned char *before=malloc(bytes),*after=malloc(bytes);assert(before&&after);
+    assert(renderer_draw(&r,&frame));glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,before);
+    IoGameView game;assert(io_app_game_view(app,&game));assert(game.selected_item==2);
+    hud_set_game(&r.hud,&game);assert(renderer_draw(&r,&frame));
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,after);
+    size_t outline=0;for(size_t p=0;p<bytes;p+=4)
+        if(after[p]>240 && after[p+1]>190 && after[p+2]<60 && memcmp(before+p,after+p,3))outline++;
+    assert(outline>20);
+    assert(!glIsEnabled(GL_STENCIL_TEST));
+    game.projectile_count=1;game.projectiles[0]=(IoProjectileView){.position={0,0,4},.radius=0.3f};
+    hud_set_game(&r.hud,&game);assert(renderer_draw(&r,&frame));
+    const float *m=frame.clip_from_world;
+    int x=(int)((m[8]*4+m[12]+1)*640),y=(int)((m[9]*4+m[13]+1)*400);
+    unsigned char pixel[4];glReadPixels(x,y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[2]>220 && pixel[1]>180);
+    game.damage_count=1;game.damage[0]=(IoDamageText){.x=600,.y=600,.alpha=1,.amount=8};
+    hud_set_game(&r.hud,&game);assert(renderer_draw_hud(&r));
+    glReadPixels(592,192,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(pixel[0]>240 && pixel[1]>140 && pixel[1]<190 && pixel[2]<80);
+    assert(hud_contains_point(&r.hud,20,20));assert(!hud_contains_point(&r.hud,600,400));
+    free(before);free(after);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: selected mesh silhouette, projectile glow, damage numbers and UI hit exclusion");
+}
+
 int main(int argc,char **argv) {
     bool variants=argc==2 && strcmp(argv[1],"--variants")==0;
+    bool game=argc==2 && strcmp(argv[1],"--game")==0;
     if(variants)assert(setenv("IO_SCENE","assets/street-kit/variants-demo.json",1)==0);
+    if(game)assert(setenv("IO_SCENE","assets/game/encounter.json",1)==0);
     assert(SDL_Init(SDL_INIT_VIDEO)==0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24);
     SDL_Window *window=SDL_CreateWindow("io buffer tests",0,0,1280,800,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
     assert(window);
     SDL_GLContext context=SDL_GL_CreateContext(window);
     assert(context && SDL_GL_MakeCurrent(window,context)==0);
-    if(variants)check_variants();
+    check_hud();
+    if(game)check_game_feedback();
+    else if(variants)check_variants();
     else {
         check_stream(GL_ARRAY_BUFFER);
         check_stream(GL_TEXTURE_BUFFER);

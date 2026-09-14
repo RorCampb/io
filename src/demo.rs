@@ -12,6 +12,35 @@ use std::collections::HashMap;
 fn vec(v: [f32; 3]) -> Vec3 {
     Vec3::new(v[0], v[1], v[2])
 }
+pub fn game(library: &ModelLibrary, world: &World) -> Result<crate::game::Game, String> {
+    if let Some(definition) = &library.config.exploration {
+        let names = library
+            .config
+            .items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item.name.clone(), i as u64 + 1))
+            .collect();
+        let plugin = io_village::Village::new(definition.clone(), world, names)?;
+        return io_game::Session::register(plugin, world)
+            .map(crate::game::Game::Village)
+            .map_err(|e| format!("village registration: {e:?}"));
+    }
+    match &library.config.game {
+        Some(definition) => {
+            let names = library
+                .config
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| (item.name.clone(), i as u64 + 1))
+                .collect();
+            io_encounter::register(definition.clone(), world, &names)
+                .map(crate::game::Game::Encounter)
+        }
+        None => Ok(crate::game::Game::default()),
+    }
+}
 pub fn world(library: &ModelLibrary) -> Result<World, String> {
     let config = &library.config;
     let origin = vec(config.origin);
@@ -58,6 +87,13 @@ pub fn world(library: &ModelLibrary) -> Result<World, String> {
             return Err(format!("invalid transform/color: {}", spec.name));
         }
         let mut item = Item {
+            grounded: spec.grounded.as_ref().map(|g| g.resolve()).transpose()?,
+            physics_body: spec
+                .physics_body
+                .as_ref()
+                .map(|b| b.resolve())
+                .transpose()?,
+            collider: spec.collider.as_ref().map(|c| c.resolve()).transpose()?,
             id: items.len() as u64 + 1,
             transform: Transform::new(
                 origin + vec(spec.position),
@@ -97,6 +133,14 @@ pub fn world(library: &ModelLibrary) -> Result<World, String> {
             item.transform.anchor = anchor;
             item.transform.rotation = io_types::Rotation::yaw(yaw)?;
             item.motion = Some(path);
+        }
+        if let Some(rotation) = spec.rotation_xyzw {
+            if spec.yaw_degrees != 0. || spec.motion.is_some() {
+                return Err(
+                    "rotation_xyzw cannot be combined with nonzero yaw or route movement".into(),
+                );
+            }
+            item.transform.rotation = io_types::Rotation::from_xyzw(rotation)?;
         }
         if let Some(animation) = &spec.animation {
             let clip = model
@@ -161,7 +205,12 @@ pub fn world(library: &ModelLibrary) -> Result<World, String> {
             return Err(format!("unknown camera follow target: {follow}"));
         }
     }
-    World::try_new(Space::try_new(vec(config.dimensions))?, items)
+    let mut world = World::try_new(Space::try_new(vec(config.dimensions))?, items)?;
+    world.set_physics_settings(config.physics.resolve()?)?;
+    if let Some(terrain) = &config.terrain {
+        world.set_terrain(terrain.resolve()?);
+    }
+    Ok(world)
 }
 
 #[cfg(test)]

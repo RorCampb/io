@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/io-types", "crates/io-world", "crates/io-assets"]
-default-members = [".", "crates/io-types", "crates/io-world", "crates/io-assets"]
+members = ["crates/io-types", "crates/io-world", "crates/io-assets", "crates/io-game", "crates/io-encounter", "crates/io-village"]
+default-members = [".", "crates/io-types", "crates/io-world", "crates/io-assets", "crates/io-game", "crates/io-encounter", "crates/io-village"]
 resolver = "2"
 
 [package]
@@ -17,3 +17,6 @@ serde_json = "1"
 io-types = { path = "crates/io-types" }
 io-world = { path = "crates/io-world" }
 io-assets = { path = "crates/io-assets" }
+io-game = { path = "crates/io-game" }
+io-encounter = { path = "crates/io-encounter" }
+io-village = { path = "crates/io-village" }

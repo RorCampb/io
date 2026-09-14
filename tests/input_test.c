@@ -13,6 +13,10 @@ static IoAction key_action(SDL_Keycode key){
 }
 int main(void){
     IoApp *app=io_app_new();assert(app);
+    assert(io_app_tick_hz(NULL)==0);
+    const char *configured_hz=getenv("IO_TICK_HZ");
+    uint32_t expected_hz=configured_hz?(uint32_t)strtoul(configured_hz,NULL,10):30;
+    assert(io_app_tick_hz(app)==expected_hz);
     IoFrame frame;assert(io_app_frame(app,1,&frame));
     assert(frame.world_items==39 && frame.instance_count>0 && frame.joint_count==14);
     uint64_t runner=0;
@@ -67,6 +71,26 @@ int main(void){
     assert(!io_app_set_render_distance(app,1,NAN));
     assert(!io_app_dispatch(app,(IoAction){.kind=UINT32_MAX}));
     io_app_free(app);io_app_free(NULL);
+    app=io_app_new_realtime();assert(app);
+    assert(io_app_tick_hz(app)==expected_hz);
+    assert(io_app_frame(app,1,&frame));
+    assert(frame.instance_count>0);
+    IoInstance first=frame.instances[0];
+    SDL_Delay(100);
+    /* Background publications cannot invalidate the C-facing frame allocation. */
+    assert(memcmp(&first,&frame.instances[0],sizeof(first))==0);
+    IoWorkerStats worker={0};
+    uint64_t timeout=SDL_GetTicks64()+3000;
+    do {
+        io_app_update(app,0.f);
+        assert(io_app_worker_stats(app,&worker));
+        if(worker.tick>0)break;
+        SDL_Delay(1);
+    } while(SDL_GetTicks64()<timeout);
+    assert(worker.tick>0 && worker.status==1);
+    assert(!io_app_worker_stats(app,NULL));
+    assert(!io_app_worker_stats(NULL,&worker) && worker.tick==0);
+    io_app_free(app);
     puts("PASS: materials/skin ABI, movement, animation, cameras, and paused state retention");
     return 0;
 }

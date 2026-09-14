@@ -25,7 +25,18 @@ impl ModelLibrary {
                     .unwrap_or_else(|| {
                         Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/street-kit/demo.json")
                     });
-                Self::load(&path)
+                let mut config = SceneConfig::read(&path)?;
+                match std::env::var("IO_TICK_HZ") {
+                    Ok(value) => {
+                        let hz = value.parse::<u32>().map_err(|_| {
+                            "IO_TICK_HZ must be an integer within 4..1000".to_owned()
+                        })?;
+                        config.simulation = crate::timing::SimulationTiming::new(hz)?;
+                    }
+                    Err(std::env::VarError::NotPresent) => {}
+                    Err(error) => return Err(format!("invalid IO_TICK_HZ: {error}")),
+                }
+                Self::from_config(config, path.parent().unwrap_or(Path::new(".")))
             })
             .as_ref()
             .map_err(String::as_str)

@@ -52,13 +52,43 @@ typedef struct IoItemState {
     uint32_t health; // Current durability, or zero if the component is absent.
     uint64_t simulated_ticks;
 } IoItemState;
+typedef struct IoWorkerStats {
+    uint64_t tick,overruns;
+    double simulation_ms,snapshot_ms,snapshot_age_ms;
+    uint32_t status; // 1 running, 2 stopped, 3 physics failure, 4 worker panic.
+} IoWorkerStats;
+typedef struct IoDamageText { float x,y,alpha;uint32_t amount; } IoDamageText;
+typedef struct IoProjectileView { IoVec3 position;float radius; } IoProjectileView;
+typedef struct IoGameView {
+    uint64_t selected_item;
+    uint32_t enabled,free_movement,line_count,damage_count;
+    char lines[12][64];
+    IoDamageText damage[16];
+    uint32_t projectile_count,reserved;
+    IoProjectileView projectiles[4];
+} IoGameView;
+typedef struct IoGameAction { uint32_t kind,slot; float x,y; } IoGameAction;
+/* Owned UI copy; no borrowed strings. Null clears output and returns false. */
+bool io_app_game_view(const IoApp *app,IoGameView *out);
+/* 1 start, 2 screen move(x,y), 3 select ability(slot), 4 pass, 5 target, 6 player,
+   7 click target(logical x,y), 8 orbit, 9 talk, 10 recruit, 11 map toggle.
+   Selection does not execute attacks. Exploration actions require that plugin.
+   Worker mode returns queue acceptance; rules are validated on the worker. */
+bool io_app_game_action(IoApp *app,uint32_t kind,uint32_t slot,float x,float y);
 
 // Handles belong to Rust. Use on one thread; free once. Null handles are accepted.
 IoApp *io_app_new(void);
+// Real-time simulation worker; the handle and all OpenGL calls stay on the caller thread.
+IoApp *io_app_new_realtime(void);
+/* Configured target simulation rate; null returns zero. Not measured throughput. */
+uint32_t io_app_tick_hz(const IoApp *app);
+// Last consumed publication, not a synchronous read of the live worker world.
+bool io_app_worker_stats(const IoApp *app,IoWorkerStats *out);
 void io_app_free(IoApp *app);
 bool io_app_dispatch(IoApp *app,IoAction action);
 // Resolve a UTF-8 state name within the item's appearance. Returns true only
-// when changed. Invalid item/state/null arguments leave the world unchanged.
+// when changed in synchronous mode; in worker mode, true means queued, not applied.
+// Invalid item/state/null arguments are rejected. A full worker queue returns false.
 // name must be NUL-terminated; consume borrowed frames before calling.
 bool io_app_set_visual_state(IoApp *app,uint64_t item_id,const char *name);
 IoCameraId io_app_active_camera(const IoApp *app);
@@ -70,6 +100,7 @@ bool io_app_set_camera_target(IoApp *app,IoCameraId camera,IoVec3 target);
 // World-unit radius around the orthographic camera target, clamped to [8,20000].
 bool io_app_set_render_distance(IoApp *app,IoCameraId camera,float distance);
 void io_app_update(IoApp *app,float seconds);
+// In worker mode update polls publications; seconds does not drive the worker clock.
 // Column-major matrices. Arrays are borrowed until the next mutable app call or free.
 // Invalid handles/IDs clear the output and return false. Never free borrowed arrays.
 bool io_app_frame(IoApp *app,IoCameraId camera,IoFrame *out);

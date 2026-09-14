@@ -52,10 +52,13 @@ class Mesh:
                 self.triangle((0,0,top), s, r, color)
             self.triangle((0,0,bottom), q, p, color)
 
-    def save(self, path):
+    def save(self, path, normals=None):
         positions = b"".join(struct.pack("<3f", *p) for p in self.positions)
         colors = b"".join(struct.pack("<4f", *c) for c in self.colors)
-        data = positions + colors
+        normal_data = b"" if normals is None else b"".join(struct.pack("<3f", *n) for n in normals)
+        if normals is not None and len(normals) != len(self.positions):
+            raise ValueError("one normal is required per vertex")
+        data = positions + colors + normal_data
         document = {
             "asset": {"version": "2.0", "generator": "io district generator"},
             "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
@@ -68,6 +71,10 @@ class Mesh:
                            "max": [max(p[i] for p in self.positions) for i in range(3)]},
                           {"bufferView": 1, "componentType": 5126, "count": len(self.colors), "type": "VEC4"}],
         }
+        if normals is not None:
+            document["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = 2
+            document["bufferViews"].append({"buffer": 0, "byteOffset": len(positions)+len(colors), "byteLength": len(normal_data)})
+            document["accessors"].append({"bufferView": 2, "componentType": 5126, "count": len(normals), "type": "VEC3"})
         path.write_text(json.dumps(document, separators=(",", ":")) + "\n")
 
 

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <math.h>
 
 static const char *vertex_source =
     "#version 410 core\n"
@@ -49,6 +50,7 @@ static const char *solid_vertex_source =
     "layout(location=10) in vec4 weights;\n"
     "layout(location=11) in uint joint_offset;\n"
     "uniform samplerBuffer joint_matrices;\n"
+    "uniform vec2 outline_offset;\n"
     "uniform mat4 clip_from_world;\n"
     "out vec3 surface_color; out vec3 world_position; out vec3 world_normal; out vec3 surface_emission;\n"
     "mat4 joint(uint i){ int at=int((joint_offset+i)*4u); return mat4(texelFetch(joint_matrices,at),\n"
@@ -58,15 +60,25 @@ static const char *solid_vertex_source =
     " mat4 transform=model*skin; vec4 p=transform*vec4(position,1.0); world_position=p.xyz;\n"
     " world_normal=vec3(0.0);\n"
     " if(dot(normal,normal)>0.0) world_normal=normalize(transpose(inverse(mat3(transform)))*normal);\n"
-    " gl_Position=clip_from_world*p; surface_color=color*material_color.rgb; surface_emission=emission; }\n";
+    " gl_Position=clip_from_world*p; gl_Position.xy+=outline_offset*gl_Position.w; surface_color=color*material_color.rgb; surface_emission=emission; }\n";
 static const char *solid_fragment_source =
     "#version 410 core\n"
     "in vec3 surface_color; in vec3 world_position; in vec3 world_normal; in vec3 surface_emission; out vec4 output_color;\n"
-    "void main(){ vec3 face_normal=cross(dFdx(world_position),dFdy(world_position));\n"
+    "uniform bool outline_mode;\n"
+    "void main(){ if(outline_mode){output_color=vec4(1.0,0.86,0.12,1.0);return;} vec3 face_normal=cross(dFdx(world_position),dFdy(world_position));\n"
     " vec3 n=normalize(dot(world_normal,world_normal)>0.000001 ? world_normal : face_normal);\n"
     " float light=0.3+0.7*abs(dot(n,normalize(vec3(0.4,-0.6,1.0))));\n"
     " vec3 linear_color=surface_color*light+surface_emission;\n"
     " output_color=vec4(pow(clamp(linear_color,0.0,1.0),vec3(1.0/2.2)),1.0); }\n";
+
+static const char *effect_vertex_source=
+    "#version 410 core\nlayout(location=0) in vec3 position;layout(location=1) in float radius;\n"
+    "uniform mat4 clip_from_world;uniform float pixel_scale;\n"
+    "void main(){gl_Position=clip_from_world*vec4(position,1);gl_PointSize=clamp(2.0*radius*pixel_scale,4.0,128.0);}\n";
+static const char *effect_fragment_source=
+    "#version 410 core\nout vec4 output_color;void main(){float r=length(gl_PointCoord*2.0-1.0);\n"
+    "if(r>1.0)discard;float a=1.0-smoothstep(0.45,1.0,r);\n"
+    "output_color=vec4(mix(vec3(0.1,0.65,1.0),vec3(0.9,1.0,1.0),1.0-r),a);}\n";
 
 static GLuint compile_shader(GLenum type,const char *source) {
     GLuint shader=glCreateShader(type);
@@ -117,6 +129,23 @@ bool renderer_init(Renderer *r) {
     r->width_uniform=glGetUniformLocation(r->program,"line_width");
     r->solid_matrix_uniform=glGetUniformLocation(r->solid_program,"clip_from_world");
     r->joints_uniform=glGetUniformLocation(r->solid_program,"joint_matrices");
+    r->outline_offset_uniform=glGetUniformLocation(r->solid_program,"outline_offset");
+    r->outline_mode_uniform=glGetUniformLocation(r->solid_program,"outline_mode");
+    glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER,GL_STENCIL,GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE,&r->stencil_bits);
+    GLuint effect_vertex=compile_shader(GL_VERTEX_SHADER,effect_vertex_source);
+    GLuint effect_fragment=compile_shader(GL_FRAGMENT_SHADER,effect_fragment_source);
+    if(!effect_vertex||!effect_fragment){if(effect_vertex)glDeleteShader(effect_vertex);if(effect_fragment)glDeleteShader(effect_fragment);renderer_destroy(r);return false;}
+    r->effect_program=glCreateProgram();glAttachShader(r->effect_program,effect_vertex);glAttachShader(r->effect_program,effect_fragment);
+    glLinkProgram(r->effect_program);glDeleteShader(effect_vertex);glDeleteShader(effect_fragment);
+    glGetProgramiv(r->effect_program,GL_LINK_STATUS,&ok);if(!ok){renderer_destroy(r);return false;}
+    r->effect_matrix_uniform=glGetUniformLocation(r->effect_program,"clip_from_world");
+    r->effect_scale_uniform=glGetUniformLocation(r->effect_program,"pixel_scale");
+    glGenVertexArrays(1,&r->effect_vao);glBindVertexArray(r->effect_vao);
+    glGenBuffers(1,&r->effect_vbo);glBindBuffer(GL_ARRAY_BUFFER,r->effect_vbo);
+    glBufferData(GL_ARRAY_BUFFER,4*sizeof(IoProjectileView),NULL,GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(IoProjectileView),(void *)offsetof(IoProjectileView,position));
+    glEnableVertexAttribArray(1);glVertexAttribPointer(1,1,GL_FLOAT,GL_FALSE,sizeof(IoProjectileView),(void *)offsetof(IoProjectileView,radius));
+    glBindVertexArray(0);
     glGetIntegerv(GL_MAX_TEXTURE_BUFFER_SIZE,&r->max_joint_matrices);r->max_joint_matrices/=4;
     if(r->max_joint_matrices<=0 ||
        !dynamic_buffer_init(&r->instances,GL_ARRAY_BUFFER,1024*sizeof(IoInstance),PTRDIFF_MAX) ||
@@ -136,10 +165,14 @@ bool renderer_init(Renderer *r) {
     glEnable(GL_MULTISAMPLE);
     GLint samples=0;glGetIntegerv(GL_SAMPLES,&samples);
     fprintf(stderr,"OpenGL %s; %dx MSAA; GPU instancing and shader-antialiased edges\n",glGetString(GL_VERSION),samples);
+    if(!hud_init(&r->hud)){renderer_destroy(r);return false;}
     if(glGetError()!=GL_NO_ERROR){renderer_destroy(r);return false;}
     return true;
 }
 void renderer_destroy(Renderer *r) {
+    glDeleteBuffers(1,&r->effect_vbo);glDeleteVertexArrays(1,&r->effect_vao);
+    if(r->effect_program)glDeleteProgram(r->effect_program);
+    hud_destroy(&r->hud);
     for(size_t i=0;i<r->model_count;i++){
         glDeleteBuffers(1,&r->models[i].vbo);glDeleteBuffers(1,&r->models[i].ebo);
         glDeleteVertexArrays(1,&r->models[i].vao);
@@ -161,6 +194,11 @@ bool renderer_resize(Renderer *r,int w,int h,int dw,int dh) {
     r->width=w;r->height=h;r->drawable_width=dw;r->drawable_height=dh;r->pixel_scale=(float)dw/w;
     glViewport(0,0,dw,dh);
     fprintf(stderr,"Window: %dx%d; framebuffer: %dx%d\n",w,h,dw,dh);
+    return true;
+}
+bool renderer_draw_hud(Renderer *r){
+    if(!hud_draw(&r->hud,r->width,r->height))return false;
+    r->last_upload_bytes+=r->hud.last_upload_bytes;
     return true;
 }
 static RenderModel *get_model(Renderer *r,uint32_t id) {
@@ -186,6 +224,20 @@ static RenderModel *get_model(Renderer *r,uint32_t id) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizeiptr)(source.index_count*sizeof(uint32_t)),source.indices,GL_STATIC_DRAW);
     return m;
 }
+static void instance_attributes(Renderer *r,RenderModel *model,size_t start){
+    glBindVertexArray(model->vao);glBindBuffer(GL_ARRAY_BUFFER,r->instances.id);
+    glEnableVertexAttribArray(11);glVertexAttribDivisor(11,1);
+    glVertexAttribIPointer(11,1,GL_UNSIGNED_INT,sizeof(IoInstance),
+        (void *)(start*sizeof(IoInstance)+offsetof(IoInstance,joint_offset)));
+    for(GLuint i=0;i<4;i++){
+        glEnableVertexAttribArray(1+i);glVertexAttribDivisor(1+i,1);
+        size_t offset=start*sizeof(IoInstance)+offsetof(IoInstance,transform)+i*4*sizeof(float);
+        glVertexAttribPointer(1+i,4,GL_FLOAT,GL_FALSE,sizeof(IoInstance),(void *)offset);
+    }
+    glEnableVertexAttribArray(5);glVertexAttribDivisor(5,1);
+    glVertexAttribPointer(5,3,GL_FLOAT,GL_FALSE,sizeof(IoInstance),
+        (void *)(start*sizeof(IoInstance)+offsetof(IoInstance,color)));
+}
 bool renderer_draw(Renderer *r,const IoFrame *frame) {
     r->last_upload_bytes=0;
     if(frame->joint_count>(size_t)r->max_joint_matrices)return false;
@@ -206,7 +258,8 @@ bool renderer_draw(Renderer *r,const IoFrame *frame) {
         r->frame_serial=frame->serial;
         r->frame_uploaded=true;
     }
-    glClearColor(0.13f,0.17f,0.19f,1.);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glStencilMask(0xff);
+    glClearColor(0.13f,0.17f,0.19f,1.);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT);
     glUseProgram(r->program);
     glUniformMatrix4fv(r->matrix_uniform,1,GL_FALSE,frame->clip_from_world);
     glUniform2f(r->viewport_uniform,(float)r->drawable_width,(float)r->drawable_height);
@@ -222,26 +275,48 @@ bool renderer_draw(Renderer *r,const IoFrame *frame) {
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_BUFFER,r->joint_texture);
     glUniform1i(r->joints_uniform,0);
     glUniformMatrix4fv(r->solid_matrix_uniform,1,GL_FALSE,frame->clip_from_world);
+    glUniform2f(r->outline_offset_uniform,0,0);glUniform1i(r->outline_mode_uniform,0);
     for(size_t start=0;start<frame->instance_count;){
         uint32_t id=frame->instances[start].model_id;
         size_t end=start+1;
         while(end<frame->instance_count&&frame->instances[end].model_id==id)end++;
         RenderModel *model=get_model(r,id);
         if(!model){fprintf(stderr,"Missing render model %u\n",id);return false;}
-        glBindVertexArray(model->vao);glBindBuffer(GL_ARRAY_BUFFER,r->instances.id);
-        glEnableVertexAttribArray(11);glVertexAttribDivisor(11,1);
-        glVertexAttribIPointer(11,1,GL_UNSIGNED_INT,sizeof(IoInstance),
-            (void *)(start*sizeof(IoInstance)+offsetof(IoInstance,joint_offset)));
-        for(GLuint i=0;i<4;i++){
-            glEnableVertexAttribArray(1+i);glVertexAttribDivisor(1+i,1);
-            size_t offset=start*sizeof(IoInstance)+offsetof(IoInstance,transform)+i*4*sizeof(float);
-            glVertexAttribPointer(1+i,4,GL_FLOAT,GL_FALSE,sizeof(IoInstance),(void *)offset);
-        }
-        glEnableVertexAttribArray(5);glVertexAttribDivisor(5,1);
-        glVertexAttribPointer(5,3,GL_FLOAT,GL_FALSE,sizeof(IoInstance),
-            (void *)(start*sizeof(IoInstance)+offsetof(IoInstance,color)));
+        instance_attributes(r,model,start);
         glDrawElementsInstanced(model->topology,model->index_count,GL_UNSIGNED_INT,(void *)0,(GLsizei)(end-start));
         start=end;
+    }
+    if(r->hud.game.enabled && r->hud.game.selected_item && r->stencil_bits>0){
+        for(size_t i=0;i<frame->instance_count;i++)if(frame->instances[i].item_id==r->hud.game.selected_item){
+            RenderModel *model=get_model(r,frame->instances[i].model_id);if(!model)return false;
+            instance_attributes(r,model,i);
+            // Stamp visible selected geometry, then dilate its silhouette in screen pixels.
+            glEnable(GL_STENCIL_TEST);glStencilFunc(GL_ALWAYS,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_REPLACE);
+            glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);glDepthMask(GL_FALSE);
+            glDrawElementsInstanced(model->topology,model->index_count,GL_UNSIGNED_INT,0,1);
+            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+            glStencilMask(0);glStencilFunc(GL_NOTEQUAL,1,0xff);glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
+            glUniform1i(r->outline_mode_uniform,1);
+            for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++)if(x||y){
+                glUniform2f(r->outline_offset_uniform,4.f*x/r->width,4.f*y/r->height);
+                glDrawElementsInstanced(model->topology,model->index_count,GL_UNSIGNED_INT,0,1);
+            }
+            glUniform1i(r->outline_mode_uniform,0);glUniform2f(r->outline_offset_uniform,0,0);
+            glDepthMask(GL_TRUE);glStencilMask(0xff);glDisable(GL_STENCIL_TEST);
+            break;
+        }
+    }
+    if(r->hud.game.enabled && r->hud.game.projectile_count){
+        unsigned int count=r->hud.game.projectile_count<4?r->hud.game.projectile_count:4;
+        glUseProgram(r->effect_program);glBindVertexArray(r->effect_vao);glBindBuffer(GL_ARRAY_BUFFER,r->effect_vbo);
+        glBufferSubData(GL_ARRAY_BUFFER,0,count*sizeof(IoProjectileView),r->hud.game.projectiles);
+        r->last_upload_bytes+=count*sizeof(IoProjectileView);
+        glUniformMatrix4fv(r->effect_matrix_uniform,1,GL_FALSE,frame->clip_from_world);
+        const float *m=frame->clip_from_world;
+        float pixels=0.5f*r->drawable_width*sqrtf(m[0]*m[0]+m[4]*m[4]+m[8]*m[8]);
+        glUniform1f(r->effect_scale_uniform,pixels);
+        glEnable(GL_PROGRAM_POINT_SIZE);glDepthMask(GL_FALSE);glDrawArrays(GL_POINTS,0,(GLsizei)count);
+        glDepthMask(GL_TRUE);glDisable(GL_PROGRAM_POINT_SIZE);
     }
     glBindVertexArray(0);
     GLenum error=glGetError();

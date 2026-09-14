@@ -1,7 +1,6 @@
 # Item Components
 
-This refactor separates existing runtime state. It does not add physics, a new
-scheduler, or a new scene format. `Item` remains the identity of a placed world
+The component system separates runtime responsibilities. `Item` remains the identity of a placed world
 object, not a model or a character superclass.
 
 ## Current Shape
@@ -16,10 +15,12 @@ Item
   depletion_response: Option<DepletionResponse>
   motion: Option<PathMotion>
   animation: Option<AnimationState>
+  physics_body: Option<PhysicsBody>
+  collider: Option<Collider>
   simulated_ticks
 ```
 
-`Transform` owns position, yaw, scale, and world-maintained interpolation history.
+`Transform` owns position, quaternion rotation, scale, and world-maintained interpolation history.
 `Occupancy` owns the local gameplay/spatial bounds. Both remain required for placed
 items. Occupancy is not a physics collider.
 
@@ -32,7 +33,11 @@ The model and skeleton remain shared in the asset catalog.
 private counters. `PathMotion` and `AnimationState` are the existing checked
 movement and playback components, retained without a cosmetic rename.
 
-`Item::default()` has no renderer, health, animation, movement, or response. Its
+`PhysicsBody` and `Collider` are an optional pair defining physical movement and
+contact shape independently of the mesh. See [Physics](physics.md) for authority,
+configuration, off-screen simulation, and solver limitations.
+
+`Item::default()` has no renderer, health, animation, movement, physics, or response. Its
 zero ID is an assembly placeholder and must be replaced before world insertion.
 
 ## Composition in Rust
@@ -95,7 +100,8 @@ compile-time proofs of membership in a particular catalog.
 
 ## Compatibility and Scope
 
-The flat version-1 scene schema is unchanged. `src/demo.rs` now explicitly builds
+The flat version-1 scene schema remains compatible, with optional physics fields.
+`src/demo.rs` explicitly builds
 components from it. Existing scene health defaults to 100 and still produces a
 durability component. Its initial maximum is `max(100, health)`, since the old
 format has no maximum field. Legacy stop/freeze/death behavior is assembled into
@@ -110,5 +116,6 @@ can inspect the optional component directly.
 Components currently use concrete optional fields within Item. This is not an
 archetype ECS, dynamic trait-object registry, or a plugin loader. New assembly
 combinations are possible in Rust; component-based JSON/templates and validated
-live attachment/removal remain separate future changes. Physics, colliders,
-dialogue, AI, and independent off-screen scheduling were deliberately not added.
+live attachment/removal remain separate future changes. Dialogue, AI, and general
+background scheduling are not implemented. Physics bodies now advance off-screen;
+non-physics items still use the existing camera-region simulation policy.

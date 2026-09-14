@@ -1,17 +1,37 @@
 use crate::spatial::SpatialIndex;
-use crate::{Axis, Effect, Item, Space};
+use crate::{Axis, BodyKind, ContactEvent, Effect, Item, PhysicsSettings, PhysicsStats, Space};
 use io_types::{Rotation, Vec3, VisualStateId};
 use std::collections::HashMap;
 
 pub struct World {
+    terrain: Option<std::sync::Arc<crate::HeightField>>,
     space: Space,
     items: Vec<Item>,
     index: SpatialIndex,
     revision: u64,
     spatial_revision: u64,
     by_id: HashMap<u64, usize>,
+    physics_indices: Vec<usize>,
+    physics_settings: PhysicsSettings,
+    physics_stats: PhysicsStats,
+    contacts: Vec<ContactEvent>,
+    physics_error: Option<String>,
+    physics_runtime: crate::physics::Runtime,
 }
 impl World {
+    pub fn snapshot(&self) -> crate::WorldSnapshot {
+        crate::WorldSnapshot {
+            terrain: self.terrain.clone(),
+            space: self.space.clone(),
+            items: self.items.clone(),
+            index: self.index.clone(),
+            by_id: self.by_id.clone(),
+            revision: self.revision,
+            spatial_revision: self.spatial_revision,
+            physics_stats: self.physics_stats,
+            physics_error: self.physics_error.clone(),
+        }
+    }
     pub fn new(space: Space, items: Vec<Item>) -> Self {
         Self::try_new(space, items).expect("invalid initial world")
     }
@@ -22,6 +42,9 @@ impl World {
             item.transform.snap();
             item.validate()
                 .map_err(|e| format!("item {}: {e}", item.id))?;
+            if let Some(body) = &mut item.physics_body {
+                body.wake();
+            }
             if item.durability.as_ref().is_some_and(|d| d.current() == 0) {
                 item.apply_depletion();
             }
@@ -33,14 +56,163 @@ impl World {
             }
             index.insert(id, item.visibility_bounds());
         }
+        let physics_indices = items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| item.physics_body.as_ref().map(|_| i))
+            .collect();
         Ok(Self {
+            terrain: None,
             space,
             items,
             index,
             revision: 0,
             spatial_revision: 0,
             by_id,
+            physics_indices,
+            physics_settings: PhysicsSettings::default(),
+            physics_stats: PhysicsStats::default(),
+            contacts: Vec::new(),
+            physics_error: None,
+            physics_runtime: crate::physics::Runtime::default(),
         })
+    }
+    pub fn physics_indices(&self) -> &[usize] {
+        &self.physics_indices
+    }
+    pub fn terrain(&self) -> Option<&crate::HeightField> {
+        self.terrain.as_deref()
+    }
+    pub fn set_terrain(&mut self, terrain: crate::HeightField) {
+        self.terrain = Some(std::sync::Arc::new(terrain));
+        self.revision = self.revision.wrapping_add(1);
+    }
+    pub fn physics_stats(&self) -> PhysicsStats {
+        self.physics_stats
+    }
+    pub fn physics_settings(&self) -> PhysicsSettings {
+        self.physics_settings
+    }
+    /// Fresh geometry check, including sleeping bodies, independent of solver anchors.
+    pub fn physics_overlap_audit(&self) -> crate::PhysicsOverlapAudit {
+        crate::physics::overlap_audit(
+            &self.items,
+            &self.physics_indices,
+            self.physics_settings.cell_size,
+        )
+    }
+    /// Enables expensive observational contact replay, not an adaptive solver.
+    pub fn set_contact_diagnostics(&mut self, enabled: bool) {
+        self.physics_runtime.diagnostics = enabled.then(Default::default);
+    }
+    pub fn contact_diagnostics(&self) -> Option<&crate::ContactDiagnostics> {
+        self.physics_runtime.diagnostics.as_ref()
+    }
+    pub fn contacts(&self) -> &[ContactEvent] {
+        &self.contacts
+    }
+    pub fn physics_error(&self) -> Option<&str> {
+        self.physics_error.as_deref()
+    }
+    pub fn set_physics_settings(&mut self, settings: PhysicsSettings) -> Result<(), String> {
+        settings.validate()?;
+        if settings != self.physics_settings {
+            self.physics_runtime.invalidate_contacts();
+            for &i in &self.physics_indices {
+                self.items[i].physics_body.as_mut().unwrap().wake();
+            }
+            self.revision = self.revision.wrapping_add(1);
+        }
+        self.physics_settings = settings;
+        Ok(())
+    }
+    pub fn apply_impulse(&mut self, id: u64, impulse: Vec3, point: Vec3) -> bool {
+        let Some(&index) = self.by_id.get(&id) else {
+            return false;
+        };
+        if !crate::physics::apply_impulse(&mut self.items[index], impulse, point) {
+            return false;
+        }
+        self.revision = self.revision.wrapping_add(1);
+        true
+    }
+    /// Atomically transfers a non-physical item's pose to a new dynamic body.
+    /// The physics topology changes, so index-based solver caches are rebuilt.
+    pub fn attach_dynamic_body(
+        &mut self,
+        id: u64,
+        body: crate::PhysicsBody,
+        collider: crate::Collider,
+        impulse: Vec3,
+        point: Vec3,
+    ) -> Result<(), String> {
+        let &index = self.by_id.get(&id).ok_or("unknown item")?;
+        if self.items[index].physics_body.is_some() || body.kind != BodyKind::Dynamic {
+            return Err("dynamic attachment requires a non-physical item".into());
+        }
+        let mut candidate = self.items[index].clone();
+        candidate.grounded = None;
+        candidate.physics_body = Some(body);
+        candidate.collider = Some(collider);
+        candidate.transform.snap();
+        candidate.validate()?;
+        if !crate::physics::apply_impulse(&mut candidate, impulse, point) {
+            return Err("invalid initial impulse".into());
+        }
+        let old = self.items[index].visibility_bounds();
+        self.index.remove(index, old);
+        self.index.insert(index, candidate.visibility_bounds());
+        self.items[index] = candidate;
+        self.physics_indices.push(index);
+        self.physics_indices.sort_unstable();
+        let diagnostics = self.physics_runtime.diagnostics.take();
+        self.physics_runtime = crate::physics::Runtime::default();
+        self.physics_runtime.diagnostics = diagnostics;
+        for &i in &self.physics_indices {
+            self.items[i].physics_body.as_mut().unwrap().wake();
+        }
+        self.contacts.clear();
+        self.physics_stats = PhysicsStats::default();
+        self.revision = self.revision.wrapping_add(1);
+        self.spatial_revision = self.spatial_revision.wrapping_add(1);
+        Ok(())
+    }
+    pub fn set_gravity_scale(&mut self, id: u64, scale: f32) -> bool {
+        if !scale.is_finite() || !(-10.0..=10.).contains(&scale) {
+            return false;
+        }
+        let Some(&index) = self.by_id.get(&id) else {
+            return false;
+        };
+        let Some(body) = &mut self.items[index].physics_body else {
+            return false;
+        };
+        if body.kind != BodyKind::Dynamic {
+            return false;
+        }
+        if body.gravity_scale != scale {
+            self.physics_runtime.invalidate_body_contacts(id);
+            body.wake();
+        }
+        body.gravity_scale = scale;
+        self.revision = self.revision.wrapping_add(1);
+        true
+    }
+    pub fn set_kinematic_target(&mut self, id: u64, anchor: Vec3, rotation: Rotation) -> bool {
+        if !crate::physics::bounded(anchor, 1e6) {
+            return false;
+        }
+        let Some(&index) = self.by_id.get(&id) else {
+            return false;
+        };
+        let Some(body) = &mut self.items[index].physics_body else {
+            return false;
+        };
+        if body.kind != BodyKind::Kinematic {
+            return false;
+        }
+        body.target = Some((anchor, rotation));
+        true
     }
     pub fn space(&self) -> &Space {
         &self.space
@@ -97,10 +269,16 @@ impl World {
         true
     }
     pub fn set_pose(&mut self, item_id: u64, anchor: Vec3, yaw: f32) -> bool {
+        let Ok(rotation) = Rotation::yaw(yaw) else {
+            return false;
+        };
+        self.set_pose_3d(item_id, anchor, rotation)
+    }
+    pub fn set_pose_3d(&mut self, item_id: u64, anchor: Vec3, rotation: Rotation) -> bool {
         let Some(&id) = self.by_id.get(&item_id) else {
             return false;
         };
-        if !anchor.finite() || !yaw.is_finite() || id >= self.items.len() {
+        if !anchor.finite() || self.items[id].physics_body.is_some() {
             return false;
         }
         let old = self.items[id].visibility_bounds();
@@ -108,7 +286,7 @@ impl World {
         let previous = item.transform;
         item.transform.snap();
         item.transform.anchor = anchor;
-        item.transform.rotation = Rotation::yaw(yaw).expect("finite yaw checked above");
+        item.transform.rotation = rotation;
         if item.validate().is_err() {
             item.transform = previous;
             return false;
@@ -137,13 +315,29 @@ impl World {
         let mut changed = false;
         let mut queue = Vec::new();
         let mut seen = std::collections::HashSet::new();
+        let mut selected;
+        let active = if self.physics_indices.is_empty() {
+            active
+        } else {
+            selected = active.to_vec();
+            selected.extend(&self.physics_indices);
+            selected.sort_unstable();
+            selected.dedup();
+            &selected
+        };
         for &id in active {
             if id >= self.items.len() || !seen.insert(id) {
                 continue;
             }
             if let Some(motion) = &mut self.items[id].motion {
                 let (anchor, yaw) = motion.advance(dt);
-                self.set_pose(self.items[id].id, anchor, yaw);
+                if self.items[id].physics_body.is_some() {
+                    if let Ok(rotation) = Rotation::yaw(yaw) {
+                        self.set_kinematic_target(self.items[id].id, anchor, rotation);
+                    }
+                } else {
+                    self.set_pose(self.items[id].id, anchor, yaw);
+                }
                 changed = true;
             }
             if let Some(animation) = &mut self.items[id].animation {
@@ -161,7 +355,12 @@ impl World {
                     );
                 }
             }
-            if self.items[id].needs_simulation() {
+            if self.items[id].needs_simulation()
+                || self.items[id]
+                    .physics_body
+                    .as_ref()
+                    .is_some_and(|b| b.kind != BodyKind::Static && !b.is_sleeping())
+            {
                 self.items[id].simulated_ticks = self.items[id].simulated_ticks.wrapping_add(1);
                 changed = true;
             }
@@ -178,6 +377,48 @@ impl World {
         });
         for pending in queue {
             pending.effect.apply(pending.target, self);
+        }
+        self.contacts.clear();
+        if !self.physics_indices.is_empty() && self.physics_error.is_none() {
+            let old_bounds: Vec<_> = self
+                .physics_indices
+                .iter()
+                .map(|&i| (self.items[i].visibility_bounds(), self.items[i].transform))
+                .collect();
+            let result = if dt > 0.25 {
+                Err("physics ticks must not exceed 0.25 seconds".into())
+            } else {
+                crate::physics::step(
+                    &mut self.items,
+                    &self.physics_indices,
+                    self.physics_settings,
+                    dt,
+                    &mut self.physics_runtime,
+                )
+            };
+            match result {
+                Ok((stats, contacts)) => {
+                    self.physics_stats = stats;
+                    self.contacts = contacts;
+                    let mut poses_changed = false;
+                    for (&i, (old, transform)) in self.physics_indices.iter().zip(old_bounds) {
+                        poses_changed |= transform != self.items[i].transform;
+                        let new = self.items[i].visibility_bounds();
+                        if old != new {
+                            self.index.remove(i, old);
+                            self.index.insert(i, new);
+                            self.spatial_revision = self.spatial_revision.wrapping_add(1);
+                        }
+                    }
+                    if poses_changed || stats.integrated > 0 || stats.woken > 0 {
+                        self.revision = self.revision.wrapping_add(1);
+                    }
+                }
+                Err(error) => {
+                    eprintln!("Physics paused: {error}");
+                    self.physics_error = Some(error);
+                }
+            }
         }
     }
 }

@@ -2,7 +2,7 @@
 use crate::camera::Camera;
 use crate::model::ModelLibrary;
 use io_types::{AppearanceId, Vec3, VisualStateId};
-use io_world::{Playback, World};
+use io_world::{Playback, WorldView};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
@@ -36,7 +36,7 @@ impl Frame {
     #[allow(clippy::too_many_arguments)]
     pub fn build(
         &mut self,
-        world: &World,
+        world: &dyn WorldView,
         camera: &Camera,
         serial: u64,
         library: &ModelLibrary,
@@ -52,7 +52,7 @@ impl Frame {
         self.grid.clear();
         self.next_lod_choices.clear();
         self.clip_from_world = camera.clip_from_world();
-        let candidates = world.query(camera.target(), camera.render_distance());
+        let candidates = world.query(camera.target(), camera.render_radius());
         self.candidate_count = candidates.len();
         for id in candidates {
             let item = &world.items()[id];
@@ -155,9 +155,9 @@ impl Frame {
         self.serial = serial;
         Ok(())
     }
-    fn build_grid(&mut self, world: &World, camera: &Camera) {
-        let r2 = camera.render_distance() * camera.render_distance()
-            - camera.target().z * camera.target().z;
+    fn build_grid(&mut self, world: &dyn WorldView, camera: &Camera) {
+        let r2 =
+            camera.render_radius() * camera.render_radius() - camera.target().z * camera.target().z;
         if r2 <= 0. {
             return;
         }

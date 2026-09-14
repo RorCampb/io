@@ -70,10 +70,21 @@ static bool create_window(SDL_Window **window, SDL_GLContext *context) {
 int main(int argc, char **argv) {
     bool smoke=false;
     bool capture=false;
+    bool single_thread=false;
+    bool show_hud=true;
     double capture_at=0.;
     BenchmarkOptions benchmark={.frames=600,.warmup=120};
     for(int i=1;i<argc;i++){
         if(strcmp(argv[i],"--smoke-test")==0)smoke=true;
+        else if(strcmp(argv[i],"--single-thread")==0)single_thread=true;
+        else if(strcmp(argv[i],"--no-hud")==0)show_hud=false;
+        else if(strcmp(argv[i],"--tick-hz")==0 && i+1<argc){
+            unsigned int hz;
+            if(!parse_count(argv[++i],&hz) || hz<4 || hz>1000){
+                fprintf(stderr,"Tick rate must be an integer within 4..1000 Hz\n");return 1;
+            }
+            if(setenv("IO_TICK_HZ",argv[i],1)!=0){perror("IO_TICK_HZ");return 1;}
+        }
         else if(strcmp(argv[i],"--scene")==0 && i+1<argc){
             if(setenv("IO_SCENE",argv[++i],1)!=0){perror("IO_SCENE");return 1;}
         }else if(strcmp(argv[i],"--capture-at")==0 && i+1<argc){
@@ -94,7 +105,7 @@ int main(int argc, char **argv) {
             benchmark.orbit=true;
         }else if(strcmp(argv[i],"--benchmark-watch")==0){
             benchmark.watch=true;
-        }else{fprintf(stderr,"Usage: %s [--scene scene.json] [--smoke-test | --capture-at seconds | --benchmark-out result.json [--benchmark-frames N] [--warmup N] [--benchmark-orbit]]\n",argv[0]);return 1;}
+        }else{fprintf(stderr,"Usage: %s [--scene scene.json] [--tick-hz 4..1000] [--single-thread] [--no-hud] [--smoke-test | --capture-at seconds | --benchmark-out result.json [--benchmark-frames N] [--warmup N] [--benchmark-orbit]]\n",argv[0]);return 1;}
     }
     if(smoke && capture){fprintf(stderr,"Choose either smoke testing or capture\n");return 1;}
     if(benchmark.output && (smoke||capture)){fprintf(stderr,"Benchmark cannot run with smoke/capture\n");return 1;}
@@ -109,6 +120,7 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
     SDL_Window *window = NULL;
@@ -136,7 +148,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    IoApp *app = io_app_new();
+    bool threaded = !single_thread && !smoke && !capture && !benchmark.output;
+    IoApp *app = threaded ? io_app_new_realtime() : io_app_new();
     if (app == NULL) {
         renderer_destroy(&renderer);
         SDL_GL_DeleteContext(context);
@@ -145,7 +158,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    fprintf(stderr,"Simulation target: %u Hz (%s)\n",io_app_tick_hz(app),threaded?"worker":"synchronous");
+    hud_set_tick_hz(&renderer.hud,io_app_tick_hz(app));
     if(benchmark.output){
+        benchmark.hud=show_hud;
         int result=benchmark_run(window,&renderer,app,&benchmark);
         io_app_free(app);renderer_destroy(&renderer);
         SDL_GL_DeleteContext(context);SDL_DestroyWindow(window);SDL_Quit();
@@ -165,8 +181,20 @@ int main(int argc, char **argv) {
     uint64_t last_tick = SDL_GetPerformanceCounter();
     int exit_code = 0;
     while (running) {
+        int input_width,input_height;SDL_GetWindowSize(window,&input_width,&input_height);
+        io_app_set_viewport(app,io_app_active_camera(app),input_width,input_height);
+        IoGameView game={0};io_app_game_view(app,&game);
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            IoGameAction game_action;
+            InputResult game_result=input_game_translate(&event,game.enabled!=0,&game_action);
+            if(game_result==INPUT_CONSUMED)continue;
+            if(game_result==INPUT_ACTION){
+                if(game_action.kind==7 && show_hud && hud_contains_point(&renderer.hud,game_action.x,game_action.y))continue;
+                if(!io_app_game_action(app,game_action.kind,game_action.slot,game_action.x,game_action.y))
+                    fprintf(stderr,"Game action rejected or queue full\n");
+                continue;
+            }
             IoAction action;
             InputResult result = input_translate(&event, &action);
             if (result == INPUT_QUIT) {
@@ -184,13 +212,28 @@ int main(int argc, char **argv) {
         uint64_t now = SDL_GetPerformanceCounter();
         float elapsed = (float)((double)(now-last_tick)/(double)SDL_GetPerformanceFrequency());
         last_tick=now;
+        if(game.enabled && !smoke && !capture){
+            const Uint8 *keys=SDL_GetKeyboardState(NULL);
+            bool focused=(SDL_GetWindowFlags(window)&SDL_WINDOW_INPUT_FOCUS)!=0;
+            IoGameAction orbit;
+            if(input_game_camera(keys,focused,elapsed,&orbit)==INPUT_ACTION)
+                io_app_game_action(app,orbit.kind,orbit.slot,orbit.x,orbit.y);
+            /* Apply orbit before converting held WASD through the current camera basis. */
+            io_app_game_view(app,&game);
+            bool moving=game.free_movement && focused;
+            float x=moving?(float)(keys[SDL_SCANCODE_D]-keys[SDL_SCANCODE_A]):0.f;
+            float y=moving?(float)(keys[SDL_SCANCODE_W]-keys[SDL_SCANCODE_S]):0.f;
+            io_app_game_action(app,2,0,x,y);
+        }
         io_app_update(app,capture?0.f:(smoke?0.125f:elapsed));
+        io_app_game_view(app,&game);hud_set_game(&renderer.hud,&game);
         int width, height, drawable_width, drawable_height;
         // Query both sizes each frame to also catch moves between displays with different DPI.
         SDL_GetWindowSize(window, &width, &height);
         SDL_GL_GetDrawableSize(window, &drawable_width, &drawable_height);
         if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) ||
             !renderer_resize(&renderer, width, height, drawable_width, drawable_height)) {
+            hud_reset(&renderer.hud);
             SDL_Delay(16);
             continue;
         }
@@ -209,6 +252,7 @@ int main(int argc, char **argv) {
         }
 
         if(!renderer_draw(&renderer,&frame)){exit_code=1;break;}
+        if(show_hud && !smoke && !capture && !renderer_draw_hud(&renderer)){exit_code=1;break;}
         if(capture){
             if(!capture_smoke_frame(drawable_width,drawable_height,"build/capture.ppm"))exit_code=1;
             fprintf(stderr,"Captured at %.3f seconds to build/capture.ppm\n",capture_at);
@@ -221,6 +265,14 @@ int main(int argc, char **argv) {
                 camera,frame.instance_count,frame.world_items,frame.candidates,frame.active_simulations,
                 frame.target.x,frame.target.y,frame.render_distance);
             SDL_SetWindowTitle(window,title);last_title=SDL_GetTicks64();
+            IoWorkerStats stats;
+            if(io_app_worker_stats(app,&stats)){
+                size_t used=strlen(title);
+                snprintf(title+used,sizeof(title)-used," | sim #%" PRIu64 " %.1fms | age %.0fms | late %" PRIu64 " | %s",
+                    stats.tick,stats.simulation_ms,stats.snapshot_age_ms,stats.overruns,
+                    stats.status==1?"worker":"WORKER STOPPED");
+                SDL_SetWindowTitle(window,title);
+            }
         }
         if(smoke){
             if(smoke_frame==0){
@@ -252,6 +304,12 @@ int main(int argc, char **argv) {
         SDL_GL_SwapWindow(window);
         if (!vsync) {
             SDL_Delay(16);
+        }
+        if(show_hud && !smoke && !capture){
+            IoWorkerStats stats;
+            bool has_worker=io_app_worker_stats(app,&stats);
+            hud_presented(&renderer.hud,(double)SDL_GetPerformanceCounter()/(double)SDL_GetPerformanceFrequency(),
+                has_worker?&stats:NULL);
         }
     }
 
