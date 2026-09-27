@@ -38,6 +38,70 @@ fn load(value: Value) -> Result<ModelLibrary, String> {
 }
 
 #[test]
+fn hybrid_zoom_refreshes_static_frames_and_keeps_cameras_independent() {
+    let mut config = fixture();
+    config["camera"]["projection"] = json!({
+        "type":"zoom_perspective", "start_zoom":1.5, "end_zoom":5.,
+        "vertical_fov_degrees":45., "near_clip":0.05, "smoothing_seconds":0.16
+    });
+    let library = Box::leak(Box::new(load(config.clone()).unwrap()));
+    let world = demo::world(library).unwrap();
+    let original = world.items()[0].transform;
+    let mut camera = Camera::new(original.anchor);
+    camera.set_projection(library.config.camera.projection);
+    let mut app = App::with_world(world, camera, None, library);
+    let second = app.create_camera().unwrap();
+    let initial = app.frame(1).unwrap().clip_from_world;
+    app.dispatch(Action::Zoom { steps: 15. });
+    let mut previous = initial;
+    for _ in 0..40 {
+        app.update(1. / 144.);
+        let frame = app.frame(1).unwrap();
+        assert_ne!(frame.clip_from_world, previous);
+        previous = frame.clip_from_world;
+        assert_eq!(app.frame(second).unwrap().clip_from_world, initial);
+        assert_eq!(app.world().items()[0].transform, original);
+    }
+    assert!(previous[3].abs() > 0.);
+    app.dispatch(Action::ResetView);
+    assert_eq!(app.frame(1).unwrap().clip_from_world, initial);
+    config["camera"]["projection"]["end_zoom"] = json!(1.);
+    assert!(load(config).is_err());
+}
+
+#[test]
+fn perspective_frame_selects_lod_by_world_depth_not_only_zoom() {
+    let mut config = fixture();
+    config["appearances"][0]["lods"][0]["min_screen_pixels"] = json!(110.);
+    let library = load(config).unwrap();
+    let original = demo::world(&library).unwrap().items()[0].clone();
+    let mut camera = Camera::new(original.transform.anchor);
+    camera.set_projection(crate::camera::Projection::ZoomPerspective {
+        start_zoom: 1.5,
+        end_zoom: 5.,
+        vertical_fov_degrees: 45.,
+        near_clip: 0.05,
+        smoothing_seconds: 0.,
+    });
+    camera.set_zoom(5.);
+    let forward = camera.basis().2;
+    let mut near = original.clone();
+    near.transform.anchor = original.transform.anchor + forward.scaled(3.);
+    let mut far = original;
+    far.id = 2;
+    far.transform.anchor = far.transform.anchor - forward.scaled(10.);
+    let world = World::new(Space::new(Vec3::new(1000., 1000., 100.)), vec![near, far]);
+    let mut frame = Frame::default();
+    frame
+        .build(&world, &camera, 1, &library, 1., &[], false)
+        .unwrap();
+    assert_eq!(frame.instances.len(), 2);
+    let a = frame.instances.iter().find(|i| i.item_id == 1).unwrap();
+    let b = frame.instances.iter().find(|i| i.item_id == 2).unwrap();
+    assert_ne!(a.model_id, b.model_id);
+}
+
+#[test]
 fn model_less_moving_items_simulate_but_do_not_enter_render_packets() {
     let library = Box::leak(Box::new(load(fixture()).unwrap()));
     let world = demo::world(library).unwrap();
@@ -260,19 +324,35 @@ fn malformed_variant_definitions_and_references_are_rejected() {
 fn orthographic_quality_tracks_zoom_and_scale_not_camera_translation() {
     let item = Item::default();
     let mut camera = Camera::new(Vec3::default());
-    let pixels = camera.projected_diameter(item.occupancy.local_bounds, item.transform.size);
+    let pixels = camera.view().projected_diameter(
+        item.occupancy.local_bounds,
+        item.transform.size,
+        Vec3::default(),
+    );
     camera.set_target(Vec3::new(100., 100., 100.));
     assert_eq!(
-        camera.projected_diameter(item.occupancy.local_bounds, item.transform.size),
+        camera.view().projected_diameter(
+            item.occupancy.local_bounds,
+            item.transform.size,
+            Vec3::default()
+        ),
         pixels
     );
     camera.set_zoom(2.);
     assert_eq!(
-        camera.projected_diameter(item.occupancy.local_bounds, item.transform.size),
+        camera.view().projected_diameter(
+            item.occupancy.local_bounds,
+            item.transform.size,
+            Vec3::default()
+        ),
         pixels * 2.
     );
     assert_eq!(
-        camera.projected_diameter(item.occupancy.local_bounds, item.transform.size.scaled(2.)),
+        camera.view().projected_diameter(
+            item.occupancy.local_bounds,
+            item.transform.size.scaled(2.),
+            Vec3::default()
+        ),
         pixels * 4.
     );
 }

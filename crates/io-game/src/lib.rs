@@ -2,6 +2,7 @@
 //! Reusable gameplay lifecycle and round framework. Concrete game rules live in plugins.
 mod plugin;
 mod round;
+pub mod stage;
 pub use plugin::*;
 pub use round::*;
 

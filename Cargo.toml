@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/io-types", "crates/io-world", "crates/io-assets", "crates/io-game", "crates/io-encounter", "crates/io-village"]
-default-members = [".", "crates/io-types", "crates/io-world", "crates/io-assets", "crates/io-game", "crates/io-encounter", "crates/io-village"]
+members = ["crates/io-types", "crates/io-world", "crates/io-assets", "crates/io-game", "crates/io-encounter", "crates/io-village", "crates/io-traversal", "crates/io-scene", "crates/io-editor", "plugins/io-locomotion", "crates/io-perception", "crates/io-playground"]
+default-members = [".", "crates/io-types", "crates/io-world", "crates/io-assets", "crates/io-game", "crates/io-encounter", "crates/io-village", "crates/io-traversal", "crates/io-scene", "crates/io-editor", "plugins/io-locomotion", "crates/io-perception", "crates/io-playground"]
 resolver = "2"
 
 [package]
@@ -20,3 +20,9 @@ io-assets = { path = "crates/io-assets" }
 io-game = { path = "crates/io-game" }
 io-encounter = { path = "crates/io-encounter" }
 io-village = { path = "crates/io-village" }
+io-traversal = { path = "crates/io-traversal" }
+io-playground = { path = "crates/io-playground" }
+io-scene = { path = "crates/io-scene" }
+io-editor = { path = "crates/io-editor" }
+
+io-locomotion = { path = "plugins/io-locomotion" }

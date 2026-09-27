@@ -1,0 +1,464 @@
+{
+  "character": "X Bot.fbx",
+  "bones": 65,
+  "clips": [
+    {
+      "clip": "cover_to_stand_2",
+      "source": "cover to stand (2).fbx",
+      "duration": 1.1333333333333333,
+      "frames": [
+        1,
+        35
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.9726234846834804,
+      "nominal_speed_mps": 0.8581971923677768,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001373291015625
+    },
+    {
+      "clip": "cover_to_stand",
+      "source": "cover to stand.fbx",
+      "duration": 1.5,
+      "frames": [
+        1,
+        46
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.9764152279228517,
+      "nominal_speed_mps": 0.6509434852819012,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00147247314453125
+    },
+    {
+      "clip": "crouched_sneaking_left",
+      "source": "crouched sneaking left.fbx",
+      "duration": 1.2666666666666666,
+      "frames": [
+        1,
+        39
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.342529654502869,
+      "nominal_speed_mps": 1.059891832502265,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001312255859375
+    },
+    {
+      "clip": "crouched_sneaking_right",
+      "source": "crouched sneaking right.fbx",
+      "duration": 1.0666666666666667,
+      "frames": [
+        1,
+        33
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.2071677298975705,
+      "nominal_speed_mps": 1.1317197467789724,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0010709762573242188
+    },
+    {
+      "clip": "falling_idle",
+      "source": "falling idle.fbx",
+      "duration": 0.7,
+      "frames": [
+        1,
+        22
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.0,
+      "nominal_speed_mps": 0.0,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0009765625
+    },
+    {
+      "clip": "falling_to_roll",
+      "source": "falling to roll.fbx",
+      "duration": 1.4666666666666666,
+      "frames": [
+        1,
+        45
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 3.0165507355081322,
+      "nominal_speed_mps": 2.056739137846454,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0015411376953125
+    },
+    {
+      "clip": "hard_landing",
+      "source": "hard landing.fbx",
+      "duration": 2.0,
+      "frames": [
+        1,
+        61
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.1699030324760047,
+      "nominal_speed_mps": 0.08495151623800234,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00140380859375
+    },
+    {
+      "clip": "idle_2",
+      "source": "idle (2).fbx",
+      "duration": 9.9,
+      "frames": [
+        1,
+        298
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.0005247360185194707,
+      "nominal_speed_mps": 5.300363823428997e-05,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001434326171875
+    },
+    {
+      "clip": "idle_3",
+      "source": "idle (3).fbx",
+      "duration": 3.2333333333333334,
+      "frames": [
+        1,
+        98
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.0010018460188689208,
+      "nominal_speed_mps": 0.00030984928418626416,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00141143798828125
+    },
+    {
+      "clip": "idle_4",
+      "source": "idle (4).fbx",
+      "duration": 2.566666666666667,
+      "frames": [
+        1,
+        78
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 5.145441861667799e-07,
+      "nominal_speed_mps": 2.0047176084419997e-07,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001422882080078125
+    },
+    {
+      "clip": "idle_5",
+      "source": "idle (5).fbx",
+      "duration": 2.2666666666666666,
+      "frames": [
+        1,
+        69
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.3018853638746284e-06,
+      "nominal_speed_mps": 5.74361189944689e-07,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001331329345703125
+    },
+    {
+      "clip": "idle",
+      "source": "idle.fbx",
+      "duration": 3.8666666666666667,
+      "frames": [
+        1,
+        117
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.0021947998900432404,
+      "nominal_speed_mps": 0.0005676206612180794,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00142669677734375
+    },
+    {
+      "clip": "jumping_up",
+      "source": "jumping up.fbx",
+      "duration": 0.23333333333333334,
+      "frames": [
+        1,
+        8
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.08350212600894406,
+      "nominal_speed_mps": 0.357866254324046,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0013885498046875
+    },
+    {
+      "clip": "left_cover_sneak",
+      "source": "left cover sneak.fbx",
+      "duration": 1.1333333333333333,
+      "frames": [
+        1,
+        35
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.3421552181243896,
+      "nominal_speed_mps": 1.1842546042274027,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001361846923828125
+    },
+    {
+      "clip": "left_turn",
+      "source": "left turn.fbx",
+      "duration": 1.0333333333333334,
+      "frames": [
+        1,
+        32
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.0004915372883273214,
+      "nominal_speed_mps": 0.0004756812467683755,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.001434326171875
+    },
+    {
+      "clip": "right_cover_sneak",
+      "source": "right cover sneak.fbx",
+      "duration": 1.1333333333333333,
+      "frames": [
+        1,
+        35
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.3421546220779421,
+      "nominal_speed_mps": 1.1842540783040667,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0011138916015625
+    },
+    {
+      "clip": "right_turn",
+      "source": "right turn.fbx",
+      "duration": 1.0333333333333334,
+      "frames": [
+        1,
+        32
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.60771203242541e-07,
+      "nominal_speed_mps": 1.555850353960074e-07,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00146484375
+    },
+    {
+      "clip": "run_to_stop",
+      "source": "run to stop.fbx",
+      "duration": 0.8666666666666667,
+      "frames": [
+        1,
+        27
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 0.8207529863686354,
+      "nominal_speed_mps": 0.9470226765791946,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0015869140625
+    },
+    {
+      "clip": "running",
+      "source": "running.fbx",
+      "duration": 0.7,
+      "frames": [
+        1,
+        22
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 3.324424982070923,
+      "nominal_speed_mps": 4.749178545815604,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0015869140625
+    },
+    {
+      "clip": "stand_to_cover_2",
+      "source": "stand to cover (2).fbx",
+      "duration": 1.2666666666666666,
+      "frames": [
+        1,
+        39
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.208650319180692,
+      "nominal_speed_mps": 0.9541976204058096,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00145721435546875
+    },
+    {
+      "clip": "stand_to_cover",
+      "source": "stand to cover.fbx",
+      "duration": 1.1333333333333333,
+      "frames": [
+        1,
+        35
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.1778141469342795,
+      "nominal_speed_mps": 1.0392477767067172,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00142669677734375
+    },
+    {
+      "clip": "walking",
+      "source": "walking.fbx",
+      "duration": 1.0333333333333334,
+      "frames": [
+        1,
+        32
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.8452242612838745,
+      "nominal_speed_mps": 1.7857008980166527,
+      "root_motion": "authored",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00142669677734375
+    },
+    {
+      "clip": "walking_in_place",
+      "source": "walking.fbx",
+      "duration": 1.0333333333333334,
+      "frames": [
+        1,
+        32
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 1.8452242612838745,
+      "nominal_speed_mps": 1.7857008980166527,
+      "root_motion": "linear_planar_drift_removed",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.00142669677734375,
+      "source_clip": "walking"
+    },
+    {
+      "clip": "running_in_place",
+      "source": "running.fbx",
+      "duration": 0.7,
+      "frames": [
+        1,
+        22
+      ],
+      "fps": 30.0,
+      "planar_travel_m": 3.324424982070923,
+      "nominal_speed_mps": 4.749178545815604,
+      "root_motion": "linear_planar_drift_removed",
+      "bind_origin_offset_armature_units": [
+        -7.727290721959434e-06,
+        -3.0517578125e-05,
+        1.5543158054351807
+      ],
+      "baked_pose_max_matrix_error": 0.0015869140625,
+      "source_clip": "running"
+    }
+  ]
+}

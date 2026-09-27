@@ -33,12 +33,17 @@ pub enum Event {
         before_tick: u64,
         outcome: Result<(), io_encounter::GameError>,
     },
+    TraversalCompleted {
+        before_tick: u64,
+        outcome: Result<(), io_traversal::Error>,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
 enum Command {
     World(WorldCommand),
     Game(io_village::Command),
+    Traversal(io_playground::Input),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,6 +206,18 @@ impl Worker {
     ) -> Result<MessageId, SubmitError> {
         self.send(Command::Game(payload))
     }
+    pub fn submit_traversal(
+        &mut self,
+        payload: io_locomotion::Command,
+    ) -> Result<MessageId, SubmitError> {
+        self.submit_playground(payload.into())
+    }
+    pub fn submit_playground(
+        &mut self,
+        payload: io_playground::Input,
+    ) -> Result<MessageId, SubmitError> {
+        self.send(Command::Traversal(payload))
+    }
     fn send(&mut self, payload: Command) -> Result<MessageId, SubmitError> {
         if self.status() != Status::Running {
             return Err(SubmitError::Stopped);
@@ -323,6 +340,10 @@ impl Task {
                     Command::Game(payload) => Event::GameCompleted {
                         before_tick: tick,
                         outcome: self.game.explore_command(&mut self.world, payload),
+                    },
+                    Command::Traversal(payload) => Event::TraversalCompleted {
+                        before_tick: tick,
+                        outcome: self.game.playground_command(&mut self.world, payload),
                     },
                 };
                 // Credits cover queued, executing AND unread replies, so this cannot fill.

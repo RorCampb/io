@@ -25,12 +25,17 @@ static const char *geometry_source =
     " edge_offset=side*(line_width*0.5+1.0); edge_color=color; EmitVertex(); }\n"
     "void main(){\n"
     " vec4 a=gl_in[0].gl_Position,b=gl_in[1].gl_Position;\n"
+    " vec3 ca=vertex[0].color,cb=vertex[1].color;\n"
+    " float da=a.z+a.w,db=b.z+b.w; if(da<0.0 && db<0.0) return;\n"
+    " if(da<0.0){float t=da/(da-db);a=mix(a,b,t);ca=mix(ca,cb,t);}\n"
+    " else if(db<0.0){float t=db/(db-da);b=mix(b,a,t);cb=mix(cb,ca,t);}\n"
+    " if(a.w<=0.000001 || b.w<=0.000001) return;\n"
     " vec2 delta=(b.xy/b.w-a.xy/a.w)*viewport;\n"
     " float len=length(delta); if(len<0.0001) return;\n"
     " vec2 normal=vec2(-delta.y,delta.x)/len;\n"
     " vec2 offset=normal*(line_width*0.5+1.0)*2.0/viewport;\n"
-    " emit_edge(a,offset,1.0,vertex[0].color); emit_edge(a,offset,-1.0,vertex[0].color);\n"
-    " emit_edge(b,offset,1.0,vertex[1].color); emit_edge(b,offset,-1.0,vertex[1].color); EndPrimitive(); }\n";
+    " emit_edge(a,offset,1.0,ca); emit_edge(a,offset,-1.0,ca);\n"
+    " emit_edge(b,offset,1.0,cb); emit_edge(b,offset,-1.0,cb); EndPrimitive(); }\n";
 static const char *fragment_source =
     "#version 410 core\n"
     "in vec3 edge_color; noperspective in float edge_offset;\n"
@@ -74,7 +79,7 @@ static const char *solid_fragment_source =
 static const char *effect_vertex_source=
     "#version 410 core\nlayout(location=0) in vec3 position;layout(location=1) in float radius;\n"
     "uniform mat4 clip_from_world;uniform float pixel_scale;\n"
-    "void main(){gl_Position=clip_from_world*vec4(position,1);gl_PointSize=clamp(2.0*radius*pixel_scale,4.0,128.0);}\n";
+    "void main(){gl_Position=clip_from_world*vec4(position,1);gl_PointSize=clamp(2.0*radius*pixel_scale/max(gl_Position.w,0.000001),4.0,128.0);}\n";
 static const char *effect_fragment_source=
     "#version 410 core\nout vec4 output_color;void main(){float r=length(gl_PointCoord*2.0-1.0);\n"
     "if(r>1.0)discard;float a=1.0-smoothstep(0.45,1.0,r);\n"
@@ -237,6 +242,32 @@ static void instance_attributes(Renderer *r,RenderModel *model,size_t start){
     glEnableVertexAttribArray(5);glVertexAttribDivisor(5,1);
     glVertexAttribPointer(5,3,GL_FLOAT,GL_FALSE,sizeof(IoInstance),
         (void *)(start*sizeof(IoInstance)+offsetof(IoInstance,color)));
+}
+bool renderer_draw_guides(Renderer *r,const IoFrame *frame){
+    if(!r->frame_uploaded||r->frame_serial!=frame->serial||frame->grid_vertex_count>INT_MAX||
+       frame->grid_vertex_count>r->grid.used/sizeof(IoVec3))return false;
+    size_t end=0;
+    for(int i=0;i<3;i++){
+        if(frame->guide_ends[i]<end||frame->guide_ends[i]>frame->grid_vertex_count||frame->guide_ends[i]%2)return false;
+        end=frame->guide_ends[i];
+    }
+    GLint program,vao;glGetIntegerv(GL_CURRENT_PROGRAM,&program);glGetIntegerv(GL_VERTEX_ARRAY_BINDING,&vao);
+    GLboolean depth=glIsEnabled(GL_DEPTH_TEST);glDisable(GL_DEPTH_TEST);
+    glUseProgram(r->program);glBindVertexArray(r->grid_vao);
+    glUniformMatrix4fv(r->matrix_uniform,1,GL_FALSE,frame->clip_from_world);
+    glUniform2f(r->viewport_uniform,(float)r->drawable_width,(float)r->drawable_height);
+    glUniform1f(r->width_uniform,1.2f*r->pixel_scale);
+    for(GLuint i=0;i<4;i++){GLfloat column[4]={0,0,0,0};column[i]=1.f;glVertexAttrib4fv(1+i,column);}
+    const float colors[3][3]={{1.f,.78f,.2f},{.2f,.9f,1.f},{1.f,.5f,.2f}};
+    size_t first=0;
+    for(int i=0;i<3;i++){
+        glVertexAttrib3fv(5,colors[i]);
+        glDrawArrays(GL_LINES,(GLint)first,(GLsizei)(frame->guide_ends[i]-first));
+        first=frame->guide_ends[i];
+    }
+    if(depth)glEnable(GL_DEPTH_TEST);
+    glUseProgram((GLuint)program);glBindVertexArray((GLuint)vao);
+    return glGetError()==GL_NO_ERROR;
 }
 bool renderer_draw(Renderer *r,const IoFrame *frame) {
     r->last_upload_bytes=0;

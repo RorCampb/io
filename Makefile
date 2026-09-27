@@ -1,14 +1,14 @@
 PROFILE?=debug
 RUST_LIB=target/$(PROFILE)/libio.a
-RUST_SOURCES=$(wildcard src/*.rs crates/*/src/*.rs crates/*/src/physics/*.rs)
-RUST_MANIFESTS=Cargo.toml $(wildcard crates/*/Cargo.toml)
+RUST_SOURCES=$(shell find src crates plugins -name '*.rs' -type f)
+RUST_MANIFESTS=Cargo.toml $(wildcard crates/*/Cargo.toml plugins/*/Cargo.toml)
 BUILD_DIR=build$(if $(filter release,$(PROFILE)),/release)
 APP=$(BUILD_DIR)/io
 CC=cc
 CFLAGS=-std=c11 -Wall -Wextra -Werror $(if $(filter release,$(PROFILE)),-O2,-g) -Iinclude -I/opt/homebrew/include -DGL_SILENCE_DEPRECATION
 LDFLAGS=-L/opt/homebrew/lib -Wl,-rpath,/opt/homebrew/lib -lSDL2 -framework OpenGL -Wl,-sectcreate,__TEXT,__info_plist,csrc/Info.plist
-RENDER_SOURCES=csrc/renderer.c csrc/dynamic_buffer.c csrc/hud.c
-RENDER_HEADERS=csrc/renderer.h csrc/dynamic_buffer.h csrc/hud.h
+RENDER_SOURCES=csrc/renderer.c csrc/dynamic_buffer.c csrc/hud.c csrc/editor_ui.c csrc/attention_ui.c
+RENDER_HEADERS=csrc/renderer.h csrc/dynamic_buffer.h csrc/hud.h csrc/editor_ui.h csrc/attention_ui.h
 
 .PHONY: all run test gpu-test release smoke clean
 
@@ -59,6 +59,11 @@ gpu-test: $(BUILD_DIR)/renderer-buffer-test
 	./$(BUILD_DIR)/renderer-buffer-test
 	./$(BUILD_DIR)/renderer-buffer-test --variants
 	./$(BUILD_DIR)/renderer-buffer-test --game
+	./$(BUILD_DIR)/renderer-buffer-test --camera
+	./$(BUILD_DIR)/renderer-buffer-test --dungeon
+	./$(BUILD_DIR)/renderer-buffer-test --editor
+	./$(BUILD_DIR)/renderer-buffer-test --attention
+	./$(BUILD_DIR)/renderer-buffer-test --pursuit
 
 smoke: $(APP)
 	./$(APP) --smoke-test

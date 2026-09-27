@@ -1,6 +1,37 @@
 use crate::{AnimationState, Playback};
 use io_types::{AppearanceId, Bounds, Rotation, Vec3, VisualStateId};
 
+/// Upright body geometry and traversal limits. This component does not indicate
+/// whether the character currently has a supporting surface beneath its feet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharacterBody {
+    pub radius: f32,
+    pub height: f32,
+    /// Maximum supporting-surface rise/run for walking, not degrees.
+    pub max_slope: f32,
+}
+impl CharacterBody {
+    pub fn validate(self) -> Result<(), String> {
+        if ![self.radius, self.height, self.max_slope]
+            .iter()
+            .all(|v| v.is_finite())
+            || !(0.1..=4.).contains(&self.radius)
+            || !(0.2..=8.).contains(&self.height)
+            || !(0.1..=2.).contains(&self.max_slope)
+        {
+            return Err("invalid character body component".into());
+        }
+        Ok(())
+    }
+    /// Conservative upright bounds with `anchor` at the center of the feet.
+    pub fn bounds_at(self, anchor: Vec3) -> Bounds {
+        Bounds {
+            min: anchor - Vec3::new(self.radius, self.radius, 0.),
+            max: anchor + Vec3::new(self.radius, self.radius, self.height),
+        }
+    }
+}
+
 /// Authoritative placement; interpolation history is maintained by World.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Transform {

@@ -743,14 +743,14 @@ impl Encounter {
             ends[i] = starts[i] + direction.scaled(actor.template.movement_speed * dt);
             ends[i].x = ends[i].x.clamp(-9e5, 9e5);
             ends[i].y = ends[i].y.clamp(-9e5, 9e5);
-            ends[i] = io_world::ground_destination(world, actor.item, ends[i])
+            ends[i] = io_world::terrain_destination(world, actor.item, ends[i])
                 .expect("validated movement");
-            // Reserve grounded destinations in stable actor order before planning the next mover.
-            if world.item(actor.item).unwrap().grounded.is_some() {
+            // Reserve character destinations in stable actor order before planning the next mover.
+            if world.item(actor.item).unwrap().character_body.is_some() {
                 let rotation = world.item(actor.item).unwrap().transform.rotation;
                 world
                     .place(actor.item, ends[i], rotation)
-                    .expect("validated grounded pose");
+                    .expect("validated character pose");
             }
         }
         if reactions {

@@ -1,0 +1,940 @@
+{
+  "version": 1,
+  "origin": [
+    0,
+    0,
+    0
+  ],
+  "dimensions": [
+    100,
+    100,
+    30
+  ],
+  "simulation": {
+    "tick_hz": 60
+  },
+  "camera": {
+    "target": [
+      50,
+      58,
+      1.33
+    ],
+    "follow": "hero",
+    "zoom": 3,
+    "render_distance": 120,
+    "orbit": {
+      "target_height_fraction": 0.7,
+      "min_distance": 0.4,
+      "max_distance": 35,
+      "clearance": 0.12,
+      "response_seconds": 0.18,
+      "lookahead_seconds": 0
+    },
+    "projection": {
+      "type": "zoom_perspective",
+      "start_zoom": 1.5,
+      "end_zoom": 5,
+      "vertical_fov_degrees": 45,
+      "near_clip": 0.05,
+      "smoothing_seconds": 0.16
+    },
+    "rigs": {
+      "motion": {
+        "type": "interior_envelope",
+        "clearance": 0.12,
+        "close_distance": 0.6,
+        "max_retreat": 8.0,
+        "max_rise": 3.0,
+        "max_fov_degrees": 95.0
+      },
+      "exterior": {
+        "yaw_degrees": 45,
+        "pitch_degrees": 35.26439,
+        "zoom": 3,
+        "fov_degrees": 45,
+        "target_height": 1,
+        "yaw_limit_degrees": 180,
+        "min_zoom": 0.5,
+        "max_zoom": 16,
+        "response_seconds": 0.25,
+        "approach": 4
+      },
+      "interiors": {
+        "Low Passage": {
+          "yaw_degrees": 0,
+          "pitch_degrees": 5,
+          "zoom": 16,
+          "fov_degrees": 50,
+          "target_height": 0.7,
+          "yaw_limit_degrees": 180,
+          "min_zoom": 0.5,
+          "max_zoom": 16,
+          "response_seconds": 0.25,
+          "approach": 4
+        },
+        "Entry Chamber": {
+          "yaw_degrees": 0,
+          "pitch_degrees": 15,
+          "zoom": 10,
+          "fov_degrees": 68,
+          "target_height": 1,
+          "yaw_limit_degrees": 180,
+          "min_zoom": 0.5,
+          "max_zoom": 16,
+          "response_seconds": 0.25,
+          "approach": 4
+        }
+      }
+    }
+  },
+  "portals": [
+    {
+      "name": "Courtyard Entrance",
+      "from": {"type": "exterior"},
+      "to": {"type": "interior", "name": "Low Passage"},
+      "center": [50, 49.8, 0.75],
+      "normal": [0, -1, 0],
+      "width": 3,
+      "height": 1.5
+    },
+    {
+      "name": "Chamber Entrance",
+      "from": {"type": "interior", "name": "Low Passage"},
+      "to": {"type": "interior", "name": "Entry Chamber"},
+      "center": [50, 43, 0.75],
+      "normal": [0, -1, 0],
+      "width": 3,
+      "height": 1.5
+    }
+  ],
+  "interiors": [
+    {
+      "name": "Low Passage",
+      "min": [
+        48.5,
+        43,
+        0
+      ],
+      "max": [
+        51.5,
+        49.8,
+        1.5
+      ],
+      "ceiling": 1.5,
+      "entry_direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "name": "Entry Chamber",
+      "min": [
+        44,
+        31,
+        0
+      ],
+      "max": [
+        56,
+        43,
+        4
+      ],
+      "ceiling": 4,
+      "entry_direction": [
+        0,
+        -1,
+        0
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "name": "stone",
+      "builtin": "box"
+    }
+  ],
+  "packages": [
+    {
+      "namespace": "mixamo",
+      "file": "../action-adventure/package.json"
+    }
+  ],
+  "items": [
+    {
+      "name": "courtyard",
+      "asset": "stone",
+      "position": [
+        30,
+        20,
+        -0.3
+      ],
+      "scale": [
+        40,
+        50,
+        0.3
+      ],
+      "tint": [
+        0.16,
+        0.22,
+        0.18
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            20.0,
+            25.0,
+            0.15
+          ]
+        },
+        "offset": [
+          20.0,
+          25.0,
+          0.15
+        ]
+      }
+    },
+    {
+      "name": "front-left",
+      "asset": "stone",
+      "position": [
+        42,
+        49,
+        0
+      ],
+      "scale": [
+        6.5,
+        0.8,
+        5
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            3.25,
+            0.4,
+            2.5
+          ]
+        },
+        "offset": [
+          3.25,
+          0.4,
+          2.5
+        ]
+      }
+    },
+    {
+      "name": "front-right",
+      "asset": "stone",
+      "position": [
+        51.5,
+        49,
+        0
+      ],
+      "scale": [
+        6.5,
+        0.8,
+        5
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            3.25,
+            0.4,
+            2.5
+          ]
+        },
+        "offset": [
+          3.25,
+          0.4,
+          2.5
+        ]
+      }
+    },
+    {
+      "name": "lintel",
+      "asset": "stone",
+      "position": [
+        48.5,
+        49,
+        1.5
+      ],
+      "scale": [
+        3,
+        0.8,
+        3.5
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            1.5,
+            0.4,
+            1.75
+          ]
+        },
+        "offset": [
+          1.5,
+          0.4,
+          1.75
+        ]
+      }
+    },
+    {
+      "name": "passage-left",
+      "asset": "stone",
+      "position": [
+        47.7,
+        43,
+        0
+      ],
+      "scale": [
+        0.8,
+        6,
+        3
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            3.0,
+            1.5
+          ]
+        },
+        "offset": [
+          0.4,
+          3.0,
+          1.5
+        ]
+      }
+    },
+    {
+      "name": "passage-right",
+      "asset": "stone",
+      "position": [
+        51.5,
+        43,
+        0
+      ],
+      "scale": [
+        0.8,
+        6,
+        3
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            3.0,
+            1.5
+          ]
+        },
+        "offset": [
+          0.4,
+          3.0,
+          1.5
+        ]
+      }
+    },
+    {
+      "name": "passage-ceiling",
+      "asset": "stone",
+      "position": [
+        48.5,
+        43,
+        1.5
+      ],
+      "scale": [
+        3,
+        6,
+        0.3
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            1.5,
+            3.0,
+            0.15
+          ]
+        },
+        "offset": [
+          1.5,
+          3.0,
+          0.15
+        ]
+      }
+    },
+    {
+      "name": "room-left",
+      "asset": "stone",
+      "position": [
+        43.2,
+        30.2,
+        0
+      ],
+      "scale": [
+        0.8,
+        13.6,
+        4
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            6.8,
+            2.0
+          ]
+        },
+        "offset": [
+          0.4,
+          6.8,
+          2.0
+        ]
+      }
+    },
+    {
+      "name": "room-right",
+      "asset": "stone",
+      "position": [
+        56,
+        30.2,
+        0
+      ],
+      "scale": [
+        0.8,
+        13.6,
+        4
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            6.8,
+            2.0
+          ]
+        },
+        "offset": [
+          0.4,
+          6.8,
+          2.0
+        ]
+      }
+    },
+    {
+      "name": "room-back",
+      "asset": "stone",
+      "position": [
+        44,
+        30.2,
+        0
+      ],
+      "scale": [
+        12,
+        0.8,
+        4
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            6.0,
+            0.4,
+            2.0
+          ]
+        },
+        "offset": [
+          6.0,
+          0.4,
+          2.0
+        ]
+      }
+    },
+    {
+      "name": "room-front-left",
+      "asset": "stone",
+      "position": [
+        44,
+        43,
+        0
+      ],
+      "scale": [
+        3.7,
+        0.8,
+        4
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            1.85,
+            0.4,
+            2.0
+          ]
+        },
+        "offset": [
+          1.85,
+          0.4,
+          2.0
+        ]
+      }
+    },
+    {
+      "name": "room-front-right",
+      "asset": "stone",
+      "position": [
+        52.3,
+        43,
+        0
+      ],
+      "scale": [
+        3.7,
+        0.8,
+        4
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            1.85,
+            0.4,
+            2.0
+          ]
+        },
+        "offset": [
+          1.85,
+          0.4,
+          2.0
+        ]
+      }
+    },
+    {
+      "name": "room-roof",
+      "asset": "stone",
+      "position": [
+        44,
+        31,
+        4
+      ],
+      "scale": [
+        12,
+        12,
+        0.3
+      ],
+      "tint": [
+        0.26,
+        0.31,
+        0.35
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            6.0,
+            6.0,
+            0.15
+          ]
+        },
+        "offset": [
+          6.0,
+          6.0,
+          0.15
+        ]
+      }
+    },
+    {
+      "name": "jump-plinth",
+      "asset": "stone",
+      "position": [
+        53,
+        55,
+        0
+      ],
+      "scale": [
+        2,
+        2,
+        0.55
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            1.0,
+            1.0,
+            0.275
+          ]
+        },
+        "offset": [
+          1.0,
+          1.0,
+          0.275
+        ]
+      }
+    },
+    {
+      "name": "room-plinth",
+      "asset": "stone",
+      "position": [
+        48.5,
+        33,
+        0
+      ],
+      "scale": [
+        3,
+        2,
+        0.45
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            1.5,
+            1.0,
+            0.225
+          ]
+        },
+        "offset": [
+          1.5,
+          1.0,
+          0.225
+        ]
+      }
+    },
+    {
+      "name": "approach-pillar-46-53",
+      "asset": "stone",
+      "position": [
+        46,
+        53,
+        0
+      ],
+      "scale": [
+        0.7,
+        0.7,
+        2.4
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.35,
+            0.35,
+            1.2
+          ]
+        },
+        "offset": [
+          0.35,
+          0.35,
+          1.2
+        ]
+      }
+    },
+    {
+      "name": "approach-pillar-46-62",
+      "asset": "stone",
+      "position": [
+        46,
+        62,
+        0
+      ],
+      "scale": [
+        0.7,
+        0.7,
+        2.4
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.35,
+            0.35,
+            1.2
+          ]
+        },
+        "offset": [
+          0.35,
+          0.35,
+          1.2
+        ]
+      }
+    },
+    {
+      "name": "approach-pillar-53-53",
+      "asset": "stone",
+      "position": [
+        53,
+        53,
+        0
+      ],
+      "scale": [
+        0.7,
+        0.7,
+        2.4
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.35,
+            0.35,
+            1.2
+          ]
+        },
+        "offset": [
+          0.35,
+          0.35,
+          1.2
+        ]
+      }
+    },
+    {
+      "name": "approach-pillar-53-62",
+      "asset": "stone",
+      "position": [
+        53,
+        62,
+        0
+      ],
+      "scale": [
+        0.7,
+        0.7,
+        2.4
+      ],
+      "tint": [
+        0.4,
+        0.36,
+        0.27
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.35,
+            0.35,
+            1.2
+          ]
+        },
+        "offset": [
+          0.35,
+          0.35,
+          1.2
+        ]
+      }
+    },
+    {
+      "name": "hero",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        50,
+        58,
+        0
+      ],
+      "character_body": {
+        "radius": 0.35,
+        "height": 1.9,
+        "max_slope": 0.8
+      },
+      "animation": {
+        "clip": "idle",
+        "speed": 1
+      }
+    }
+  ],
+  "traversal": {
+    "player": "hero",
+    "walk_speed": 3.4,
+    "crouch_speed": 0.95,
+    "jump_speed": 4.5,
+    "gravity": 9.81,
+    "standing_height": 1.9,
+    "crouch_height": 1.15,
+    "turn_speed": 8,
+    "blend_seconds": 0.12,
+    "clips": {
+      "idle": {
+        "clip": "idle",
+        "speed": 1,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "walk": {
+        "clip": "running_in_place",
+        "speed": 0.85,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "crouch_idle": {
+        "clip": "crouched_sneaking_left",
+        "speed": 0,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "crouch_walk": {
+        "clip": "crouched_sneaking_left",
+        "speed": 0.9,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "jump": {
+        "clip": "jumping_up",
+        "speed": 1,
+        "looping": false,
+        "fixed_root_height": true
+      },
+      "fall": {
+        "clip": "falling_idle",
+        "speed": 1,
+        "looping": true,
+        "fixed_root_height": true
+      },
+      "land": {
+        "clip": "hard_landing",
+        "speed": 1,
+        "looping": false,
+        "fixed_root_height": false
+      }
+    }
+  }
+}

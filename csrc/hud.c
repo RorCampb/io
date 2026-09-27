@@ -5,7 +5,7 @@
 #include <string.h>
 
 typedef struct HudVertex {float x,y,u,v;uint32_t mask[2];float color[4];} HudVertex;
-enum { MAX_VERTICES=6*(2+HUD_LINE_COUNT*(HUD_LINE_LENGTH-1)+12*63+16*12) };
+enum { MAX_VERTICES=6*(2+HUD_LINE_COUNT*(HUD_LINE_LENGTH-1)+12*63+16*12+8*(32+4)) };
 
 static const char *vertex_source=
     "#version 410 core\n"
@@ -140,6 +140,7 @@ static void glyph(char c,uint32_t mask[2]){
     else if(c>='A'&&c<='Z')rows=letters[c-'A'];
     else if(c=='.')punctuation[6]=4;
     else if(c=='-')punctuation[3]=14;
+    else if(c=='+'){punctuation[2]=4;punctuation[3]=14;punctuation[4]=4;}
     else if(c==','){punctuation[5]=4;punctuation[6]=8;}
     else if(c=='\'' || c=='"'){
         punctuation[0]=punctuation[1]=c=='\''?4:10;
@@ -154,6 +155,9 @@ static void glyph(char c,uint32_t mask[2]){
     }
     else if(c=='/'){
         const unsigned char rows[7]={1,2,2,4,8,8,16};memcpy(punctuation,rows,7);
+    }
+    else if(c=='%'){
+        const unsigned char rows[7]={17,2,2,4,8,8,17};memcpy(punctuation,rows,7);
     }
     else if(c=='(' || c==')'){
         const unsigned char left[7]={2,4,8,8,8,4,2},right[7]={8,4,2,2,2,4,8};
@@ -192,6 +196,24 @@ bool hud_draw(Hud *h,int width,int height){
         float x=fmaxf(4.f,width-panel_width-12.f),y=12.f;
         const uint32_t full[2]={UINT32_MAX,7};const float bg[4]={0.025f,0.04f,0.05f,0.90f};
         const float white[4]={0.94f,0.97f,1.f,1.f},yellow[4]={1.f,0.83f,0.2f,1.f},red[4]={1.f,0.38f,0.28f,1.f};
+        for(unsigned int i=0;i<h->game.meter_count && i<8;i++){
+            const IoWorldMeter *m=&h->game.meters[i];
+            if(!isfinite(m->x)||!isfinite(m->y)||!isfinite(m->value) ||
+                m->x<0.f||m->x>width||m->y+28.f<0.f||m->y>height)continue;
+            float value=fminf(1.f,fmaxf(0.f,m->value)),left=m->x-108.f;
+            float ink[4]={0,0,0,1};
+            for(int c=0;c<3;c++)ink[c]=isfinite(m->color[c])?fminf(1.f,fmaxf(0.f,m->color[c])):1.f;
+            const float track[4]={0.17f,0.22f,0.25f,1.f};
+            quad(vertices,&count,left,m->y,216.f,28.f,full,bg);
+            char text[33];snprintf(text,sizeof(text),"%.23s %.0f%%",m->label,value*100.f);
+            for(size_t j=0;j<strlen(text);j++){
+                uint32_t bits[2];glyph(text[j],bits);
+                quad(vertices,&count,left+8.f+j*6.f,m->y+4.f,5.f,7.f,bits,white);
+            }
+            quad(vertices,&count,left+8.f,m->y+16.f,200.f,6.f,full,track);
+            quad(vertices,&count,left+8.f,m->y+16.f,200.f*value,6.f,full,ink);
+            quad(vertices,&count,left+6.f+200.f*value,m->y+14.f,4.f,10.f,full,ink);
+        }
         for(unsigned int i=0;i<h->game.damage_count && i<16;i++){
             IoDamageText hit=h->game.damage[i];
             if(!isfinite(hit.x)||!isfinite(hit.y)||!isfinite(hit.alpha)||hit.alpha<=0.f)continue;
@@ -237,4 +259,26 @@ bool hud_draw(Hud *h,int width,int height){
     glBlendFuncSeparate((GLenum)src_rgb,(GLenum)dst_rgb,(GLenum)src_alpha,(GLenum)dst_alpha);
     glUseProgram((GLuint)program);glBindVertexArray((GLuint)vao);glBindBuffer(GL_ARRAY_BUFFER,(GLuint)buffer);
     return glGetError()==GL_NO_ERROR;
+}
+
+bool hud_draw_elements(Hud *h,int width,int height,const HudElement *elements,size_t length){
+    if(width<=0||height<=0)return false;
+    HudVertex vertices[MAX_VERTICES];int count=0;
+    const uint32_t full[2]={UINT32_MAX,7};
+    for(size_t i=0;i<length;i++){
+        const HudElement *e=&elements[i];
+        size_t chars=strnlen(e->text,sizeof(e->text));
+        if(count+(int)(chars?chars:1)*6>MAX_VERTICES)return false;
+        if(!chars)quad(vertices,&count,e->x,e->y,e->w,e->h,full,e->color);
+        for(size_t c=0;c<chars;c++){
+            uint32_t mask[2];glyph(e->text[c],mask);
+            quad(vertices,&count,e->x+c*6*e->scale,e->y,5*e->scale,7*e->scale,mask,e->color);
+        }
+    }
+    GLint buffer;glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&buffer);
+    glBindBuffer(GL_ARRAY_BUFFER,h->vbo);
+    glBufferSubData(GL_ARRAY_BUFFER,0,count*sizeof(HudVertex),vertices);
+    glBindBuffer(GL_ARRAY_BUFFER,(GLuint)buffer);
+    h->vertices=count;h->width=width;h->height=height;h->dirty=false;
+    return hud_draw(h,width,height);
 }

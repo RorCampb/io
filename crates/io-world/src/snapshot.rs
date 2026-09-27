@@ -5,6 +5,19 @@ use std::collections::HashMap;
 
 /// Common read-only surface for synchronous worlds and immutable publications.
 pub trait WorldView {
+    /// Custom world adapters can omit this; perception then resamples conservatively.
+    fn changes(&self) -> Option<&crate::ChangeLog> {
+        None
+    }
+    fn portals(&self) -> &[crate::Portal] {
+        &[]
+    }
+    fn space_location(&self, id: u64) -> Option<crate::SpaceLocation> {
+        self.item(id).map(|_| crate::SpaceLocation::Exterior)
+    }
+    fn interiors(&self) -> &[crate::Interior] {
+        &[]
+    }
     fn terrain(&self) -> Option<&crate::HeightField> {
         None
     }
@@ -14,12 +27,19 @@ pub trait WorldView {
     fn query(&self, center: Vec3, radius: f32) -> Vec<usize>;
     fn revision(&self) -> u64;
     fn spatial_revision(&self) -> u64;
+    fn navigation_revision(&self) -> u64 {
+        self.spatial_revision()
+    }
     fn physics_stats(&self) -> PhysicsStats;
     fn physics_error(&self) -> Option<&str>;
 }
 
 /// Owned item/spatial data only: no solver caches, meshes, or mutable world access.
 pub struct WorldSnapshot {
+    pub(crate) changes: std::sync::Arc<crate::ChangeLog>,
+    pub(crate) interiors: std::sync::Arc<[crate::Interior]>,
+    pub(crate) portals: std::sync::Arc<[crate::Portal]>,
+    pub(crate) locations: Vec<crate::SpaceLocation>,
     pub(crate) terrain: Option<std::sync::Arc<crate::HeightField>>,
     pub(crate) space: Space,
     pub(crate) items: Vec<Item>,
@@ -27,11 +47,26 @@ pub struct WorldSnapshot {
     pub(crate) by_id: HashMap<u64, usize>,
     pub(crate) revision: u64,
     pub(crate) spatial_revision: u64,
+    pub(crate) navigation_revision: u64,
     pub(crate) physics_stats: PhysicsStats,
     pub(crate) physics_error: Option<String>,
 }
 
 impl WorldView for WorldSnapshot {
+    fn changes(&self) -> Option<&crate::ChangeLog> {
+        Some(&self.changes)
+    }
+    fn portals(&self) -> &[crate::Portal] {
+        &self.portals
+    }
+    fn space_location(&self, id: u64) -> Option<crate::SpaceLocation> {
+        self.by_id
+            .get(&id)
+            .map(|&i| self.locations.get(i).copied().unwrap_or_default())
+    }
+    fn interiors(&self) -> &[crate::Interior] {
+        &self.interiors
+    }
     fn terrain(&self) -> Option<&crate::HeightField> {
         self.terrain.as_deref()
     }
@@ -56,6 +91,9 @@ impl WorldView for WorldSnapshot {
     fn spatial_revision(&self) -> u64 {
         self.spatial_revision
     }
+    fn navigation_revision(&self) -> u64 {
+        self.navigation_revision
+    }
     fn physics_stats(&self) -> PhysicsStats {
         self.physics_stats
     }
@@ -65,6 +103,18 @@ impl WorldView for WorldSnapshot {
 }
 
 impl WorldView for World {
+    fn changes(&self) -> Option<&crate::ChangeLog> {
+        Some(self.changes())
+    }
+    fn portals(&self) -> &[crate::Portal] {
+        self.portals()
+    }
+    fn space_location(&self, id: u64) -> Option<crate::SpaceLocation> {
+        self.space_location(id)
+    }
+    fn interiors(&self) -> &[crate::Interior] {
+        self.interiors()
+    }
     fn terrain(&self) -> Option<&crate::HeightField> {
         self.terrain()
     }
@@ -85,6 +135,9 @@ impl WorldView for World {
     }
     fn spatial_revision(&self) -> u64 {
         self.spatial_revision()
+    }
+    fn navigation_revision(&self) -> u64 {
+        self.navigation_revision()
     }
     fn physics_stats(&self) -> PhysicsStats {
         self.physics_stats()

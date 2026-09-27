@@ -11,6 +11,8 @@
 #include "renderer.h"
 #include "input.h"
 #include "benchmark.h"
+#include "editor_ui.h"
+#include "attention_ui.h"
 
 static bool parse_count(const char *text,unsigned int *out) {
     char *end=NULL;
@@ -72,11 +74,13 @@ int main(int argc, char **argv) {
     bool capture=false;
     bool single_thread=false;
     bool show_hud=true;
+    bool editor=false;
     double capture_at=0.;
     BenchmarkOptions benchmark={.frames=600,.warmup=120};
     for(int i=1;i<argc;i++){
         if(strcmp(argv[i],"--smoke-test")==0)smoke=true;
         else if(strcmp(argv[i],"--single-thread")==0)single_thread=true;
+        else if(strcmp(argv[i],"--editor")==0)editor=true;
         else if(strcmp(argv[i],"--no-hud")==0)show_hud=false;
         else if(strcmp(argv[i],"--tick-hz")==0 && i+1<argc){
             unsigned int hz;
@@ -105,12 +109,15 @@ int main(int argc, char **argv) {
             benchmark.orbit=true;
         }else if(strcmp(argv[i],"--benchmark-watch")==0){
             benchmark.watch=true;
-        }else{fprintf(stderr,"Usage: %s [--scene scene.json] [--tick-hz 4..1000] [--single-thread] [--no-hud] [--smoke-test | --capture-at seconds | --benchmark-out result.json [--benchmark-frames N] [--warmup N] [--benchmark-orbit]]\n",argv[0]);return 1;}
+        }else{fprintf(stderr,"Usage: %s [--scene scene.json] [--editor] [--tick-hz 4..1000] [--single-thread] [--no-hud] [--smoke-test | --capture-at seconds | --benchmark-out result.json [--benchmark-frames N] [--warmup N] [--benchmark-orbit]]\n",argv[0]);return 1;}
     }
     if(smoke && capture){fprintf(stderr,"Choose either smoke testing or capture\n");return 1;}
+    if(editor && (smoke||benchmark.output||!getenv("IO_SCENE"))){fprintf(stderr,"Editor requires --scene and cannot benchmark/smoke test\n");return 1;}
     if(benchmark.output && (smoke||capture)){fprintf(stderr,"Benchmark cannot run with smoke/capture\n");return 1;}
     int smoke_frame = 0;
     float *first_pose=NULL;size_t first_joint_count=0;
+    SDL_SetHint(SDL_HINT_TRACKPAD_IS_TOUCH_ONLY,"1");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -148,7 +155,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    bool threaded = !single_thread && !smoke && !capture && !benchmark.output;
+    bool threaded = !editor && !single_thread && !smoke && !capture && !benchmark.output;
     IoApp *app = threaded ? io_app_new_realtime() : io_app_new();
     if (app == NULL) {
         renderer_destroy(&renderer);
@@ -158,6 +165,14 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    EditorUi ui={0};
+    if(editor){
+        SDL_SetWindowMinimumSize(window,1100,700);
+        if(!editor_ui_init(&ui,app)){
+            io_app_free(app);renderer_destroy(&renderer);SDL_GL_DeleteContext(context);
+            SDL_DestroyWindow(window);SDL_Quit();return 1;
+        }
+    }
     fprintf(stderr,"Simulation target: %u Hz (%s)\n",io_app_tick_hz(app),threaded?"worker":"synchronous");
     hud_set_tick_hz(&renderer.hud,io_app_tick_hz(app));
     if(benchmark.output){
@@ -176,7 +191,14 @@ int main(int argc, char **argv) {
             remaining-=step;
         }
     }
+    AttentionUi attention={0};
+    bool attention_enabled=!editor&&show_hud&&!smoke&&!capture;
+    if(attention_enabled&&!attention_ui_init(&attention)){
+        io_app_free(app);renderer_destroy(&renderer);
+        SDL_GL_DeleteContext(context);SDL_DestroyWindow(window);SDL_Quit();return 1;
+    }
     bool running = true;
+    InputTrackpad trackpad={0};
     uint64_t last_title = 0;
     uint64_t last_tick = SDL_GetPerformanceCounter();
     int exit_code = 0;
@@ -184,13 +206,18 @@ int main(int argc, char **argv) {
         int input_width,input_height;SDL_GetWindowSize(window,&input_width,&input_height);
         io_app_set_viewport(app,io_app_active_camera(app),input_width,input_height);
         IoGameView game={0};io_app_game_view(app,&game);
+        if(editor)editor_ui_refresh(&ui,app,input_width,input_height);
+        if(attention_enabled)attention_ui_refresh(&attention,app,input_width,input_height);
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if(attention_enabled&&attention_ui_event(&attention,&event))continue;
+            if(input_trackpad_event(&trackpad,&event))continue;
+            if(editor && editor_ui_event(&ui,app,&event))continue;
             IoGameAction game_action;
-            InputResult game_result=input_game_translate(&event,game.enabled!=0,&game_action);
+            InputResult game_result=input_game_translate(&event,game.enabled!=0&&(!editor||ui.view.playing),&game_action);
             if(game_result==INPUT_CONSUMED)continue;
             if(game_result==INPUT_ACTION){
-                if(game_action.kind==7 && show_hud && hud_contains_point(&renderer.hud,game_action.x,game_action.y))continue;
+                if(game_action.kind==7 && !editor && show_hud && hud_contains_point(&renderer.hud,game_action.x,game_action.y))continue;
                 if(!io_app_game_action(app,game_action.kind,game_action.slot,game_action.x,game_action.y))
                     fprintf(stderr,"Game action rejected or queue full\n");
                 continue;
@@ -198,6 +225,7 @@ int main(int argc, char **argv) {
             IoAction action;
             InputResult result = input_translate(&event, &action);
             if (result == INPUT_QUIT) {
+                if(editor&&!editor_ui_quit(&ui,app,window))continue;
                 running = false;
                 break;
             }
@@ -206,15 +234,25 @@ int main(int argc, char **argv) {
             }
         }
 
+        if(attention_enabled)attention_ui_submit(&attention,app);
+
+        IoAction gestures[2];
+        unsigned gesture_count=input_trackpad_actions(&trackpad,gestures);
+        bool gesture_focus=(SDL_GetWindowFlags(window)&SDL_WINDOW_INPUT_FOCUS)!=0;
+        if(!gesture_focus)input_trackpad_reset(&trackpad);
+        for(unsigned i=0;gesture_focus && i<gesture_count;i++){
+            if(editor && ui.editing)continue;
+            io_app_dispatch(app,gestures[i]);
+        }
         if (!running) {
             break;
         }
         uint64_t now = SDL_GetPerformanceCounter();
         float elapsed = (float)((double)(now-last_tick)/(double)SDL_GetPerformanceFrequency());
         last_tick=now;
-        if(game.enabled && !smoke && !capture){
+        if(game.enabled && !smoke && !capture && (!editor||ui.view.playing)){
             const Uint8 *keys=SDL_GetKeyboardState(NULL);
-            bool focused=(SDL_GetWindowFlags(window)&SDL_WINDOW_INPUT_FOCUS)!=0;
+            bool focused=(SDL_GetWindowFlags(window)&SDL_WINDOW_INPUT_FOCUS)!=0&&(!editor||(!ui.editing&&!ui.mouse_capture));
             IoGameAction orbit;
             if(input_game_camera(keys,focused,elapsed,&orbit)==INPUT_ACTION)
                 io_app_game_action(app,orbit.kind,orbit.slot,orbit.x,orbit.y);
@@ -224,6 +262,7 @@ int main(int argc, char **argv) {
             float x=moving?(float)(keys[SDL_SCANCODE_D]-keys[SDL_SCANCODE_A]):0.f;
             float y=moving?(float)(keys[SDL_SCANCODE_W]-keys[SDL_SCANCODE_S]):0.f;
             io_app_game_action(app,2,0,x,y);
+            io_app_game_action(app,12,moving && (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]),0,0);
         }
         io_app_update(app,capture?0.f:(smoke?0.125f:elapsed));
         io_app_game_view(app,&game);hud_set_game(&renderer.hud,&game);
@@ -252,7 +291,16 @@ int main(int argc, char **argv) {
         }
 
         if(!renderer_draw(&renderer,&frame)){exit_code=1;break;}
-        if(show_hud && !smoke && !capture && !renderer_draw_hud(&renderer)){exit_code=1;break;}
+        if(!editor && frame.guide_ends[2]>0 && !renderer_draw_guides(&renderer,&frame)){exit_code=1;break;}
+        if(!editor && show_hud && !smoke && !capture && !renderer_draw_hud(&renderer)){exit_code=1;break;}
+        if(attention_enabled){
+            attention_ui_refresh(&attention,app,width,height);
+            if(!attention_ui_draw(&attention)){exit_code=1;break;}
+        }
+        if(editor){
+            editor_ui_refresh(&ui,app,width,height);
+            if((!ui.view.playing&&!ui.view.preview&&!renderer_draw_guides(&renderer,&frame))||!editor_ui_draw(&ui)){exit_code=1;break;}
+        }
         if(capture){
             if(!capture_smoke_frame(drawable_width,drawable_height,"build/capture.ppm"))exit_code=1;
             fprintf(stderr,"Captured at %.3f seconds to build/capture.ppm\n",capture_at);
@@ -314,6 +362,8 @@ int main(int argc, char **argv) {
     }
 
     free(first_pose);
+    if(editor)editor_ui_destroy(&ui);
+    if(attention_enabled)attention_ui_destroy(&attention);
     io_app_free(app);
     renderer_destroy(&renderer);
     SDL_GL_DeleteContext(context);

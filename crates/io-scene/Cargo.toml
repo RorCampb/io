@@ -1,0 +1,8 @@
+[package]
+name = "io-scene"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+io-world = { path = "../io-world" }
+io-types = { path = "../io-types" }
+serde = { version = "1", features = ["derive"] }

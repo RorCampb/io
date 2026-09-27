@@ -2,17 +2,31 @@
 mod app;
 mod appearance;
 #[cfg(test)]
+mod attention_tests;
+#[cfg(test)]
 mod benchmark;
 mod camera;
+mod camera_boom;
+mod camera_envelope;
+mod camera_guides;
+mod camera_projection;
+mod camera_rig;
+mod camera_slide;
+mod camera_steering;
 mod config;
 mod contact_diagnostics_report;
 mod demo;
+mod editor;
 mod game;
 mod model;
 #[cfg(test)]
 mod package_tests;
 mod physics_benchmark;
 mod physics_config;
+#[cfg(test)]
+mod portal_camera_tests;
+#[cfg(test)]
+mod traversal_tests;
 #[cfg(test)]
 mod village_tests;
 pub use contact_diagnostics_report::ContactReport;
@@ -53,6 +67,9 @@ pub fn validate_scene(path: &std::path::Path) -> Result<ValidationReport, String
 
 pub fn validate_package(path: &std::path::Path) -> Result<ValidationReport, String> {
     let config = config::SceneConfig {
+        interiors: Vec::new(),
+        traversal: None,
+        portals: Vec::new(),
         exploration: None,
         terrain: None,
         game: None,
@@ -62,6 +79,10 @@ pub fn validate_package(path: &std::path::Path) -> Result<ValidationReport, Stri
         dimensions: [1.; 3],
         origin: [0.; 3],
         camera: config::CameraConfig {
+            rigs: None,
+            orbit: None,
+            interior: None,
+            projection: camera::Projection::default(),
             coverage: camera::RenderCoverage::Radius,
             target: [0.; 3],
             zoom: 1.,
@@ -103,6 +124,15 @@ pub struct IoProjectileView {
     pub radius: f32,
 }
 #[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct IoWorldMeter {
+    pub x: f32,
+    pub y: f32,
+    pub value: f32,
+    pub color: [f32; 3],
+    pub label: [u8; 24],
+}
+#[repr(C)]
 pub struct IoGameView {
     pub selected_item: u64,
     pub enabled: u32,
@@ -114,6 +144,9 @@ pub struct IoGameView {
     pub projectile_count: u32,
     pub reserved: u32,
     pub projectiles: [IoProjectileView; 4],
+    pub meter_count: u32,
+    pub meter_reserved: u32,
+    pub meters: [IoWorldMeter; 8],
 }
 
 /// Owned presentation text only; rules and validation remain in io-game.
@@ -135,12 +168,18 @@ pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameVie
         projectile_count: 0,
         reserved: 0,
         projectiles: [IoProjectileView::default(); 4],
+        meter_count: 0,
+        meter_reserved: 0,
+        meters: [IoWorldMeter::default(); 8],
     };
     let Some(app) = (unsafe { app.as_ref() }) else {
         return false;
     };
     let game = app.state.game();
     out.selected_item = app.state.controlled_actor().unwrap_or(0);
+    if let Some(traversal) = game.traversal() {
+        out.selected_item = traversal.player();
+    }
     out.enabled = u32::from(game.enabled());
     out.free_movement = u32::from(matches!(
         game.phase(),
@@ -174,6 +213,49 @@ pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameVie
         out.line_count += 1;
     }
     if let Some(camera) = app.state.camera(app.state.active_camera()) {
+        if let Some(traversal) = game.traversal() {
+            for (i, track) in traversal.observations().iter().take(4).enumerate() {
+                let Some(anchor) = app.state.item_label_anchor(track.target()) else {
+                    continue;
+                };
+                let Some((x, y)) = camera.project(anchor) else {
+                    continue;
+                };
+                let stack = traversal.observations()[..i]
+                    .iter()
+                    .filter(|t| t.target() == track.target())
+                    .count();
+                let rows = [
+                    (
+                        format!(
+                            "{} ATTENTION",
+                            track.label().chars().take(12).collect::<String>()
+                        ),
+                        track.attention(),
+                        [1., 0.83, 0.2],
+                    ),
+                    ("FOCUS".into(), track.evidence(), [0.25, 0.85, 1.]),
+                ];
+                for (row, (label, value, color)) in rows.into_iter().enumerate() {
+                    let mut meter = IoWorldMeter {
+                        x,
+                        y: y - 68. - stack as f32 * 68. + row as f32 * 32.,
+                        value,
+                        color,
+                        ..Default::default()
+                    };
+                    for (dest, byte) in meter.label.iter_mut().take(23).zip(label.bytes()) {
+                        *dest = if byte.is_ascii_alphanumeric() || byte == b' ' {
+                            byte.to_ascii_uppercase()
+                        } else {
+                            b' '
+                        };
+                    }
+                    out.meters[out.meter_count as usize] = meter;
+                    out.meter_count += 1;
+                }
+            }
+        }
         for hit in game.damage_numbers().iter().rev().take(16) {
             let age = (game.time() - hit.created_at) as f32;
             if let Some((x, y)) = camera.project(hit.position) {
@@ -218,10 +300,72 @@ pub unsafe extern "C" fn io_app_game_action(
     x: f32,
     y: f32,
 ) -> bool {
-    if !(1..=11).contains(&kind) || !x.is_finite() || !y.is_finite() {
+    if !(1..=13).contains(&kind) || !x.is_finite() || !y.is_finite() {
         return false;
     }
     unsafe { app.as_mut() }.is_some_and(|a| a.state.game_action(kind, slot, x, y))
+}
+#[repr(C)]
+#[derive(Default)]
+pub struct IoAttentionSettings {
+    pub observer: u64,
+    pub target: u64,
+    pub fov_degrees: f32,
+    pub notice_attention: f32,
+    pub has_pursuit: u32,
+}
+/// Read applied settings from the latest simulation publication.
+/// # Safety
+/// app must be null or live; out must be separately writable.
+#[no_mangle]
+pub unsafe extern "C" fn io_app_attention_settings(
+    app: *const IoApp,
+    index: u32,
+    out: *mut IoAttentionSettings,
+) -> bool {
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return false;
+    };
+    *out = IoAttentionSettings::default();
+    let Some(app) = (unsafe { app.as_ref() }) else {
+        return false;
+    };
+    let Some((settings, has_pursuit)) = app
+        .state
+        .game()
+        .traversal()
+        .and_then(|t| t.attention_settings(index as usize))
+    else {
+        return false;
+    };
+    *out = IoAttentionSettings {
+        observer: settings.observer,
+        target: settings.target,
+        fov_degrees: settings.fov_degrees,
+        notice_attention: settings.notice_attention,
+        has_pursuit: u32::from(has_pursuit),
+    };
+    true
+}
+/// Queue acceptance in worker mode; read settings to observe applied values.
+/// # Safety
+/// app must be null or exclusively owned on its calling thread.
+#[no_mangle]
+pub unsafe extern "C" fn io_app_tune_attention(
+    app: *mut IoApp,
+    observer: u64,
+    target: u64,
+    fov_degrees: f32,
+    notice_attention: f32,
+) -> bool {
+    unsafe { app.as_mut() }.is_some_and(|app| {
+        app.state.tune_attention(io_playground::AttentionSettings {
+            observer,
+            target,
+            fov_degrees,
+            notice_attention,
+        })
+    })
 }
 #[repr(C)]
 #[derive(Default)]
@@ -290,6 +434,7 @@ pub struct IoFrame {
     pub render_distance: f32,
     pub joint_matrices: *const f32,
     pub joint_count: usize,
+    pub guide_ends: [usize; 3],
 }
 impl Default for IoFrame {
     fn default() -> Self {
@@ -307,6 +452,7 @@ impl Default for IoFrame {
             render_distance: 0.,
             joint_matrices: ptr::null(),
             joint_count: 0,
+            guide_ends: [0; 3],
         }
     }
 }
@@ -535,6 +681,7 @@ pub unsafe extern "C" fn io_app_frame(
         render_distance,
         joint_matrices: frame.joint_matrices.as_ptr().cast(),
         joint_count: frame.joint_matrices.len(),
+        guide_ends: frame.guide_ends,
     };
     true
 }

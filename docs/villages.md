@@ -92,24 +92,24 @@ and cannot advance its timer. `io-world::line_of_sight` handles geometry only:
 segment tests against box/sphere colliders and terrain triangle boundaries.
 The village plugin owns sight range, roster selection and disengagement rules.
 
-## Grounded Movement and Limits
+## CharacterBody Movement and Limits
 
-The optional `Grounded` Item component lives in `io-world`, not the village
+The optional `CharacterBody` Item component lives in `io-world`, not the village
 plugin. It defines an upright footprint, height and maximum slope. The shared
 checked `HeightField` uses exactly the terrain mesh's triangle interpolation.
 World snapshots share immutable terrain through `Arc` rather than copying all
-samples every tick. Plugins request movement through `ground_destination` and
+samples every tick. Plugins request movement through `terrain_destination` and
 checked placement; they do not mutate Item fields directly.
 
-Movement is conservatively substepped against collider bounds and other grounded
+Movement is conservatively substepped against collider bounds and other character-bodied
 characters, with axis sliding. It prevents thin-wall tunneling at supported
 movement distances and stops at the map edge. It is not a general navmesh,
 capsule sweep, jumping, stair climbing or a rigid-body pushing controller.
 NPCs may queue behind each other; complex crowds and obstacles need better pathfinding.
 Trees are decorative in this first map; building walls and characters block walking.
 
-Living grounded characters have exclusive pose ownership, not a dynamic physics
-body. On death, validated dynamic-body attachment removes Grounded and hands the
+Living characters with a CharacterBody have exclusive pose ownership, not a dynamic physics
+body. On death, validated dynamic-body attachment removes CharacterBody and hands the
 Item to existing rigid-body physics. Settlement combat areas have flat physical
 floor colliders underneath the rendered ground. **The height field is not a new
 rigid-body mesh collider**: corpses pushed out into distant hills do not have

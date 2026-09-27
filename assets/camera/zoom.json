@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "dimensions": [100, 100, 30],
+  "origin": [0, 0, 0],
+  "simulation": {"tick_hz": 60},
+  "camera": {
+    "target": [50, 50, 1],
+    "zoom": 1.2,
+    "render_distance": 120,
+    "coverage": {"type": "viewport", "min_z": -1, "max_z": 6},
+    "projection": {
+      "type": "zoom_perspective",
+      "start_zoom": 1.5,
+      "end_zoom": 5,
+      "vertical_fov_degrees": 45,
+      "near_clip": 0.05,
+      "smoothing_seconds": 0.16
+    }
+  },
+  "assets": [{"name": "box", "builtin": "box"}],
+  "packages": [{"namespace": "mixamo", "file": "../action-adventure/package.json"}],
+  "items": [
+    {"name": "floor", "asset": "box", "position": [38, 38, -0.3], "scale": [24, 24, 0.2], "tint": [0.13, 0.19, 0.17]},
+    {"name": "path", "asset": "box", "position": [48, 38, -0.09], "scale": [4, 24, 0.08], "tint": [0.42, 0.43, 0.32]},
+    {"name": "runner", "appearance": "mixamo/x_bot", "position": [50, 50, 0], "animation": {"clip": "walking_in_place", "speed": 1}},
+    {"name": "pillar_1", "asset": "box", "position": [46, 42, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_2", "asset": "box", "position": [53.2, 42, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_3", "asset": "box", "position": [46, 46, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_4", "asset": "box", "position": [53.2, 46, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_5", "asset": "box", "position": [46, 54, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_6", "asset": "box", "position": [53.2, 54, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_7", "asset": "box", "position": [46, 58, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]},
+    {"name": "pillar_8", "asset": "box", "position": [53.2, 58, 0], "scale": [0.8, 0.8, 3], "tint": [0.55, 0.39, 0.22]}
+  ]
+}

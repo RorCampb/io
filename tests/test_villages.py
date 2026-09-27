@@ -40,7 +40,7 @@ class VillageContentTests(unittest.TestCase):
                 self.assertEqual(sum(n["home"]==f"v{village}-house{house}" for n in npcs),4)
         for npc in exploration["npcs"]:
             self.assertIn(npc["home"],items)
-            self.assertIn("grounded",items[npc["item"]])
+            self.assertIn("character_body",items[npc["item"]])
             self.assertNotIn("motion",items[npc["item"]])
 
     def test_terrain_exports_smooth_unit_normals(self):

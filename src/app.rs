@@ -10,6 +10,28 @@ use std::collections::{BTreeMap, HashSet};
 use std::ops::Bound::{Excluded, Unbounded};
 
 pub type CameraId = u64;
+
+fn append_route_guides(frame: &mut Frame, routes: &[(Vec3, &[Vec3])]) {
+    frame.guide_ends = [frame.grid.len(); 3];
+    // Reuse the renderer's cyan/orange groups. Bounds keep debug uploads finite.
+    for group in 0..2 {
+        for (index, (start, route)) in routes.iter().take(256).enumerate() {
+            if index % 2 != group {
+                continue;
+            }
+            let lift = Vec3::new(0., 0., 0.12);
+            let mut from = *start;
+            for &to in route.iter().take(128) {
+                frame.grid.extend([from + lift, to + lift]);
+                for axis in [Vec3::new(0.12, 0., 0.), Vec3::new(0., 0.12, 0.)] {
+                    frame.grid.extend([to + lift - axis, to + lift + axis]);
+                }
+                from = to;
+            }
+        }
+        frame.guide_ends[group + 1] = frame.grid.len();
+    }
+}
 pub enum Action {
     Orbit { yaw: f32, pitch: f32 },
     Zoom { steps: f32 },
@@ -47,6 +69,7 @@ impl View {
     }
 }
 pub struct App {
+    editor: Option<crate::editor::Editor>,
     game: crate::game::Game,
     game_target: Option<u64>,
     game_player: Option<u64>,
@@ -67,10 +90,17 @@ pub struct App {
     map_view: bool,
 }
 impl App {
+    #[cfg(test)]
+    pub(crate) fn set_test_game(&mut self, game: crate::game::Game) {
+        self.game = game;
+    }
     pub fn new_threaded() -> Result<Self, String> {
         Self::new()?.into_threaded()
     }
     pub(crate) fn into_threaded(mut self) -> Result<Self, String> {
+        if self.editor.is_some() {
+            return Err("Editor playtest uses the inline simulation".into());
+        }
         let regions = self.regions();
         self.world = match self.world {
             Simulation::Inline(world) => Simulation::Threaded(Worker::spawn_with_game(
@@ -110,8 +140,19 @@ impl App {
             config.origin[2] + config.camera.target[2],
         ));
         camera.set_zoom(config.camera.zoom);
+        camera.set_projection(config.camera.projection);
+        camera.set_orbit_camera(config.camera.orbit);
+        camera.set_interior_camera(config.camera.interior);
         camera.set_distance(config.camera.render_distance);
         camera.set_coverage(config.camera.coverage);
+        if let Some(rigs) = &config
+            .camera
+            .rigs
+            .as_ref()
+            .filter(|_| config.camera.orbit.is_none())
+        {
+            camera.track_rigs(rigs, world.interiors(), None, 0.);
+        }
         let follow = config
             .camera
             .follow
@@ -133,6 +174,7 @@ impl App {
             view.follow_offset = view.camera.target() - world.items()[id].transform.anchor;
         }
         Self {
+            editor: None,
             game: crate::game::Game::default(),
             game_target: None,
             game_player: None,
@@ -155,6 +197,245 @@ impl App {
     }
     pub fn world(&self) -> &dyn WorldView {
         &*self.world
+    }
+    /// Labels use the same interpolated pose as rendered characters, not the latest tick pose.
+    pub fn item_label_anchor(&self, id: u64) -> Option<Vec3> {
+        let item = self.world().item(id)?;
+        let height = item
+            .character_body
+            .map_or(item.transform.size.z, |body| body.height);
+        Some(item.render_pose(self.last_alpha).0 + Vec3::new(0., 0., height + 0.25))
+    }
+    pub fn editor(&self) -> Option<&crate::editor::Editor> {
+        self.editor.as_ref()
+    }
+    pub fn enable_editor(&mut self) -> Result<(), String> {
+        if self.editor.is_some() {
+            return Err("Editor is already enabled".into());
+        }
+        if self.worker().is_some() {
+            return Err("Editor needs an inline preview session".into());
+        }
+        let path = std::env::var_os("IO_SCENE").ok_or("Start the editor with --scene")?;
+        let document = io_editor::Document::open(std::path::Path::new(&path))?;
+        self.editor = Some(crate::editor::Editor {
+            document,
+            selected: 0,
+            playing: false,
+            preview: false,
+            trajectory: false,
+            guides: crate::camera_guides::GuideCache::default(),
+            status: if self.library.config.camera.orbit.is_some() {
+                "Free orbit in Play. Room rigs/path guides are inactive previews."
+            } else {
+                "Select an interior. Edit volume bounds or preview its rig."
+            }
+            .into(),
+        });
+        self.editor_focus(false);
+        Ok(())
+    }
+    fn editor_focus(&mut self, preview: bool) {
+        let Some(e) = &mut self.editor else {
+            return;
+        };
+        e.preview = preview;
+        let origin = self.library.config.origin;
+        let bounds = e
+            .regions(origin)
+            .get(e.selected.wrapping_sub(1))
+            .map(|r| r.bounds)
+            .unwrap_or_else(|| {
+                let p = Vec3::new(
+                    origin[0] + self.library.config.camera.target[0],
+                    origin[1] + self.library.config.camera.target[1],
+                    origin[2] + self.library.config.camera.target[2],
+                );
+                io_types::Bounds {
+                    min: p - Vec3::new(10., 10., 1.),
+                    max: p + Vec3::new(10., 10., 5.),
+                }
+            });
+        let Some(view) = self.cameras.get_mut(&self.active_camera) else {
+            return;
+        };
+        if preview {
+            if let Some(rig) = e.document.draft().rig(e.selected) {
+                let mut p = bounds.center();
+                p.z = bounds.min.z + rig.target_height;
+                view.camera.preview_rig(rig, p);
+                let draft = e.document.draft();
+                if matches!(
+                    draft.rigs.motion,
+                    io_scene::RigMotion::InteriorEnvelope { .. }
+                ) {
+                    let regions = e.regions(origin);
+                    let foot = (e.selected > 0).then_some(Vec3::new(p.x, p.y, bounds.min.z));
+                    view.camera.preview_rig(&draft.rigs.exterior, p);
+                    for _ in 0..180 {
+                        let h = view
+                            .camera
+                            .track_rigs(&draft.rigs, &regions, foot, 1. / 60.);
+                        if let Some(foot) = foot {
+                            view.camera.set_target(foot + Vec3::new(0., 0., h));
+                        }
+                    }
+                }
+            }
+        } else {
+            e.refresh_guides(&view.camera, &self.library.config);
+            view.camera.inspect_region(
+                if e.trajectory || e.document.draft().portal_index(e.selected).is_some() {
+                    e.guides.bounds.unwrap_or(bounds)
+                } else {
+                    bounds
+                },
+            );
+        }
+        view.dirty = true;
+    }
+    pub fn editor_command(&mut self, kind: u32, index: usize, field: usize, value: f32) -> bool {
+        let result = self.edit_command(kind, index, field, value);
+        if let Err(error) = &result {
+            if let Some(e) = &mut self.editor {
+                e.status = error.clone();
+            }
+        }
+        result.is_ok()
+    }
+    fn edit_command(
+        &mut self,
+        kind: u32,
+        index: usize,
+        field: usize,
+        value: f32,
+    ) -> Result<(), String> {
+        use io_editor::Command;
+        let kind = Command::try_from(kind)?;
+        let e = self.editor.as_mut().ok_or("Editor is not enabled")?;
+        if e.playing && !matches!(kind, Command::Save | Command::Play) {
+            return Err("Stop preview before editing".into());
+        }
+        match kind {
+            Command::Select => {
+                if index >= e.document.draft().selection_count() {
+                    return Err("Unknown selection".into());
+                }
+                e.document.commit();
+                e.selected = index;
+                self.editor_focus(false);
+            }
+            Command::Set => {
+                if e.selected > 0
+                    && e.document.draft().portal_index(e.selected).is_none()
+                    && matches!(
+                        e.document.draft().rigs.motion,
+                        io_scene::RigMotion::InteriorEnvelope { .. }
+                    )
+                    && matches!(field,0..=2|4..=6)
+                {
+                    return Err("Geometry orbit uses Exterior angles and zoom limits.".into());
+                }
+                e.document.set(e.selected, field, value)?;
+                e.status = "Value applied. Preview rig or Play to test transitions.".into();
+                let preview = e.preview;
+                if preview {
+                    self.editor_focus(true);
+                } else {
+                    for view in self.cameras.values_mut() {
+                        view.dirty = true;
+                    }
+                }
+            }
+            Command::Commit => e.document.commit(),
+            Command::Undo | Command::Redo => {
+                if kind == Command::Undo {
+                    e.document.undo();
+                } else {
+                    e.document.redo();
+                }
+                e.selected = e.selected.min(e.document.draft().selection_count() - 1);
+                e.status = "History applied.".into();
+                let p = e.preview;
+                self.editor_focus(p);
+            }
+            Command::Save => {
+                e.document.save()?;
+                e.status = "Saved rigs and volumes; other scene data preserved.".into();
+            }
+            Command::Preview | Command::Frame => self.editor_focus(kind == Command::Preview),
+            Command::Play => {
+                let mut world = crate::demo::world(self.library)?;
+                let draft = e.document.draft();
+                let (regions, portals) = io_scene::resolve_layout(
+                    &draft.regions,
+                    &draft.portals,
+                    self.library.config.origin,
+                )?;
+                world.set_space_layout(regions, portals)?;
+                let game = crate::demo::game(self.library, &world)?;
+                e.document.commit();
+                e.playing = !e.playing;
+                let playing = e.playing;
+                self.game = game;
+                self.game_player = None;
+                self.game_target = None;
+                self.game_ability = None;
+                self.map_view = false;
+                self.world = Simulation::Inline(Box::new(world));
+                self.accumulator = 0.;
+                self.last_alpha = 0.;
+                self.simulation_dirty = true;
+                for view in self.cameras.values_mut() {
+                    view.camera = view.home.clone();
+                    view.follow = view.home_follow;
+                    view.dirty = true;
+                }
+                if !playing {
+                    self.editor_focus(false);
+                }
+                if let Some(e) = &mut self.editor {
+                    e.status = if playing {
+                        "PLAY: WASD, Space, Shift. Stop restores the scene."
+                    } else {
+                        "EDIT: preview stopped; authored changes retained."
+                    }
+                    .into();
+                }
+            }
+            Command::Capture => {
+                if e.selected > 0
+                    && matches!(
+                        e.document.draft().rigs.motion,
+                        io_scene::RigMotion::InteriorEnvelope { .. }
+                    )
+                {
+                    return Err(
+                        "Geometry orbit derives interior framing. Capture Exterior instead.".into(),
+                    );
+                }
+                let (yaw, pitch, zoom) = self.cameras[&self.active_camera].camera.capture_rig();
+                e.document.capture(e.selected, yaw, pitch, zoom)?;
+                e.status = "Captured view angles and zoom into the selected rig.".into();
+            }
+            Command::Duplicate => {
+                e.selected = e.document.duplicate(e.selected)?;
+                self.editor_focus(false);
+            }
+            Command::Trajectory => {
+                e.trajectory = !e.trajectory;
+                e.status = "Sample route, not navigation. Camera markers cap at 80m.".into();
+                self.editor_focus(false);
+            }
+            Command::AddPortal => {
+                e.selected = e.document.add_portal(e.selected)?;
+                e.preview = false;
+                e.trajectory = false;
+                e.status = "Entrance created. Space indices: 0 exterior, 1.. interiors.".into();
+                self.editor_focus(false);
+            }
+        }
+        Ok(())
     }
     pub fn game(&self) -> &crate::game::Game {
         self.worker().map_or(&self.game, |w| &w.current.game)
@@ -182,7 +463,50 @@ impl App {
             .filter(|id| targets.contains(id))
             .or_else(|| targets.first().copied())
     }
+    pub fn tune_attention(&mut self, settings: io_playground::AttentionSettings) -> bool {
+        if settings.validate().is_err() || self.editor.as_ref().is_some_and(|e| !e.playing) {
+            return false;
+        }
+        let command = io_playground::Input::TuneAttention(settings);
+        match &mut self.world {
+            Simulation::Inline(world) => self.game.playground_command(world, command).is_ok(),
+            Simulation::Threaded(worker) => worker.submit_playground(command).is_ok(),
+        }
+    }
     pub fn game_action(&mut self, kind: u32, slot: u32, x: f32, y: f32) -> bool {
+        if self.editor.as_ref().is_some_and(|e| !e.playing) {
+            return false;
+        }
+        if kind == 13 {
+            return self.update_active_view(|view, _| view.camera.toggle_room_anchor());
+        }
+        if self.game().traversal().is_some() {
+            let command = match kind {
+                2 => {
+                    let Some(d) = self
+                        .camera(self.active_camera)
+                        .and_then(|c| c.ground_direction(x, y))
+                    else {
+                        return false;
+                    };
+                    io_locomotion::Command::Move {
+                        x: d.x.clamp(-1., 1.),
+                        y: d.y.clamp(-1., 1.),
+                    }
+                }
+                4 => io_locomotion::Command::Jump,
+                12 if slot <= 1 => io_locomotion::Command::Crouch(slot == 1),
+                8 => return self.dispatch(Action::Orbit { yaw: x, pitch: y }),
+                _ => return false,
+            };
+            return match &mut self.world {
+                Simulation::Inline(world) => self.game.traversal_command(world, command).is_ok(),
+                Simulation::Threaded(worker) => worker.submit_traversal(command).is_ok(),
+            };
+        }
+        if kind == 12 {
+            return slot <= 1;
+        }
         use io_encounter::GameCommand;
         if !self.game().enabled() {
             return false;
@@ -330,7 +654,9 @@ impl App {
             .into_iter()
             .filter_map(|index| {
                 let item = &self.world().items()[index];
-                if self.game().village().is_some_and(|v| v.exploring()) && item.grounded.is_none() {
+                if self.game().village().is_some_and(|v| v.exploring())
+                    && item.character_body.is_none()
+                {
                     return None;
                 }
                 let renderable = item.renderable.as_ref()?;
@@ -421,6 +747,145 @@ impl App {
     pub fn game_lines(&self) -> Vec<String> {
         use io_encounter::{AbilityEffect, CombatEvent, Phase};
         let game = self.game();
+        if let Some(t) = game.traversal() {
+            if !t.observations().is_empty() {
+                let pursuit = t.pursuit_status();
+                let mut lines = vec![
+                    if pursuit.is_empty() {
+                        "ATTENTION TEST - OBSERVER NAMED ON GOLD METER"
+                    } else {
+                        "CAT AND MOUSE - BREAK SIGHT AND EVADE"
+                    }
+                    .into(),
+                    "GOLD: ATTENTION - CYAN: DIRECTIONAL FOCUS".into(),
+                    "METERS FOLLOW THEIR TRACKED TARGET".into(),
+                    "WASD MOVE - SPACE JUMP - SHIFT CROUCH".into(),
+                    "TWO FINGERS OR RIGHT DRAG ORBIT - PINCH ZOOM".into(),
+                    "COVER BREAKS SIGHT - ATTENTION FADES OVER TIME".into(),
+                ];
+                for (actor, phase, tags) in pursuit.iter().take(4) {
+                    let name = t
+                        .observations()
+                        .iter()
+                        .find(|o| o.observer() == *actor)
+                        .map_or("NPC", |o| o.label());
+                    let state = match phase {
+                        io_playground::PursuitPhase::Patrol => "PATROL",
+                        io_playground::PursuitPhase::Chase => "CHASE",
+                        io_playground::PursuitPhase::Search => "SEARCH LAST SEEN",
+                        io_playground::PursuitPhase::Tagged => "TAGGED - ESCAPE NOW",
+                    };
+                    lines.push(format!(
+                        "{}: {} - TAGS {}",
+                        name.to_uppercase(),
+                        state,
+                        tags
+                    ));
+                }
+                if t.debug_routes() {
+                    for d in t.diagnostics().into_iter().take(2) {
+                        lines.push(format!(
+                            "NPC {} {:?} / {:?} - ROUTE {}",
+                            d.actor,
+                            d.feedback.status,
+                            d.feedback.execution.motion,
+                            d.route.len()
+                        ));
+                        let goal = match d.goal {
+                            Some(io_traversal::NavigationGoal::Position(p))
+                            | Some(io_traversal::NavigationGoal::Approach {
+                                position: p, ..
+                            }) => format!("{:.1} {:.1} {:.1}", p.x, p.y, p.z),
+                            None => "HOLD".into(),
+                        };
+                        lines.push(format!(
+                            "GOAL {goal} - TICKET {}",
+                            d.feedback.ticket.revision
+                        ));
+                    }
+                }
+                return lines;
+            }
+            let mut lines = vec![
+                "DUNGEON ENTRY - TRAVERSAL".into(),
+                "WASD MOVE - SPACE JUMP - HOLD SHIFT CROUCH".into(),
+                "TWO FINGERS OR RIGHT DRAG ORBIT - PINCH ZOOM".into(),
+                if self.library.config.camera.orbit.is_some() {
+                    "FREE ORBIT - WHEEL OR +/- ALSO ZOOM".into()
+                } else {
+                    format!(
+                        "TAB CAMERA: {}",
+                        if self.cameras[&self.active_camera].camera.room_anchored() {
+                            "ROOM ANCHORED"
+                        } else {
+                            "FOLLOW"
+                        }
+                    )
+                },
+                format!(
+                    "STATE {:?} - {}",
+                    t.motion(),
+                    if t.grounded() { "GROUNDED" } else { "AIRBORNE" }
+                ),
+                format!(
+                    "STANCE {} - VERTICAL SPEED {:.2}",
+                    if t.crouched() { "CROUCHED" } else { "STANDING" },
+                    t.vertical_speed()
+                ),
+            ];
+            for (id, status, known) in t.navigation_status().into_iter().take(3) {
+                lines.push(format!("NPC {id}: {status:?} - {known} KNOWN CELLS"));
+            }
+            let statuses = t.navigation_status();
+            if statuses.len() > 4 {
+                use io_traversal::NavigationStatus as S;
+                let count = |status| statuses.iter().filter(|s| s.1 == status).count();
+                lines[0] = format!("TRAVERSAL LOAD - {} NPCS", statuses.len());
+                lines.truncate(6);
+                lines.push(format!(
+                    "PLAN {} - FOLLOW {} - ARRIVE {}",
+                    count(S::Planning),
+                    count(S::Following),
+                    count(S::Arrived)
+                ));
+                lines.push(format!(
+                    "BLOCK {} - UNREACH {} - FAIL {}",
+                    count(S::Blocked),
+                    count(S::Unreachable),
+                    count(S::Failed)
+                ));
+                if let Some(s) = t.planning_stats() {
+                    lines.push(format!(
+                        "JOBS {} - ACCEPT {} - REJECT {}",
+                        s.pending, s.accepted, s.rejected
+                    ));
+                    lines.push(format!(
+                        "DEFER {} - LAST PLAN {:.0} MS",
+                        s.queue_full, s.last_job_ms
+                    ));
+                }
+            }
+            if let Some(actors) = t.athletics_feedback() {
+                lines[0] = "ATHLETICS COURSE - GEOMETRY-DERIVED ROUTES".into();
+                lines[3] = "NPC LOOPS: STAIRS - GAP - OBSTACLE DETOURS".into();
+                for f in actors.into_iter().take(2) {
+                    lines.push(format!(
+                        "NPC {} {:?} - Z {:.2} - {}",
+                        f.actor,
+                        f.motion,
+                        f.position.z,
+                        if f.grounded { "SUPPORTED" } else { "AIRBORNE" }
+                    ));
+                }
+            }
+            if let Some(stats) = t.navigation_stats() {
+                lines.push(format!(
+                    "NAV {} EXPANDED - {} CACHE HITS",
+                    stats.expanded, stats.cache_hits
+                ));
+            }
+            return lines;
+        }
         if let Some(village) = game.village().filter(|v| v.exploring()) {
             return village.lines(self.world());
         }
@@ -646,7 +1111,12 @@ impl App {
                 true
             }
             Action::Orbit { yaw, pitch } => {
-                self.update_active_view(|view, _| view.camera.orbit(yaw, pitch))
+                let view = self.cameras.get_mut(&self.active_camera).unwrap();
+                let exclude = view.follow.map(|i| self.world.items()[i].id);
+                let changed = view.camera.orbit_around(&*self.world, exclude, yaw, pitch);
+                view.dirty |= changed;
+                self.simulation_dirty |= changed;
+                changed
             }
             Action::Zoom { steps } => self.update_active_view(|view, _| view.camera.zoom_by(steps)),
             Action::Pan { dx, dy } => self.update_active_view(|view, space| {
@@ -729,6 +1199,15 @@ impl App {
         }
     }
     pub fn update(&mut self, seconds: f32) {
+        if self.editor.as_ref().is_some_and(|e| !e.playing) {
+            if seconds.is_finite() && seconds > 0. {
+                for view in self.cameras.values_mut() {
+                    view.dirty |= view.camera.advance(seconds);
+                    view.dirty |= view.camera.advance_envelope(seconds);
+                }
+            }
+            return;
+        }
         if !seconds.is_finite() || seconds < 0. || (seconds == 0. && self.worker().is_none()) {
             return;
         }
@@ -759,6 +1238,13 @@ impl App {
                         Event::GameCompleted {
                             outcome: Ok(()), ..
                         } => {}
+                        Event::TraversalCompleted {
+                            outcome: Err(error),
+                            ..
+                        } => eprintln!("Traversal command {:?} rejected: {:?}", event.id, error),
+                        Event::TraversalCompleted {
+                            outcome: Ok(()), ..
+                        } => {}
                     }
                 }
             }
@@ -786,18 +1272,92 @@ impl App {
             item.motion.is_some() || item.animation.is_some() || item.interpolates_pose()
         });
         for view in self.cameras.values_mut() {
+            view.dirty |= view.camera.advance(seconds);
+            let foot = view.follow.map(|id| {
+                let item = &self.world.items()[id];
+                (
+                    item.render_pose(alpha).0,
+                    (item.transform.anchor - item.render_pose(0.).0)
+                        .scaled(1. / self.timing.seconds() as f32),
+                )
+            });
+            let guidance = view
+                .camera
+                .track_interior(self.world.interiors(), foot, seconds);
+            view.dirty |= guidance > 0.;
             if let Some(id) = view.follow {
-                view.camera
-                    .set_target(self.world.items()[id].render_pose(alpha).0 + view.follow_offset);
+                let height = self.world.items()[id]
+                    .character_body
+                    .map_or(1., |g| g.height * 0.55);
+                let mut offset = view.follow_offset;
+                // Keep the pivot inside the actor when crouching, independent of rooms.
+                if let Some(orbit) = self.library.config.camera.orbit {
+                    offset.z = match (
+                        orbit.target_height_fraction,
+                        self.world.items()[id].character_body,
+                    ) {
+                        (Some(fraction), Some(body)) => body.height * fraction,
+                        _ => offset.z.min(height),
+                    };
+                }
+                offset.z += (height - offset.z) * guidance;
+                let rigs = self
+                    .editor
+                    .as_ref()
+                    .map(|e| &e.document.draft().rigs)
+                    .or(self.library.config.camera.rigs.as_ref())
+                    .filter(|_| self.library.config.camera.orbit.is_none());
+                if let Some(rigs) = rigs {
+                    let p = self.world.items()[id].render_pose(alpha).0;
+                    view.camera.track_space(
+                        crate::camera::SpaceView {
+                            rigs,
+                            regions: self.world.interiors(),
+                            portals: self.world.portals(),
+                            location: self
+                                .world
+                                .space_location(self.world.items()[id].id)
+                                .unwrap_or_default(),
+                            point: p,
+                        },
+                        seconds,
+                    );
+                } else {
+                    view.camera
+                        .set_target(self.world.items()[id].render_pose(alpha).0 + offset);
+                }
                 view.dirty = true;
                 self.simulation_dirty = true;
             }
+            let (velocity, exclude) = view.follow.map_or((Vec3::default(), None), |i| {
+                let item = &self.world.items()[i];
+                (
+                    (item.transform.anchor - item.render_pose(0.).0)
+                        .scaled(1. / self.timing.seconds() as f32),
+                    Some(item.id),
+                )
+            });
+            view.dirty |= view
+                .camera
+                .resolve_orbit(&*self.world, velocity, exclude, seconds);
             view.dirty |= interpolating && alpha != self.last_alpha;
         }
         self.last_alpha = alpha;
     }
     pub fn frame(&mut self, id: CameraId) -> Option<&Frame> {
+        let routes = self
+            .game()
+            .traversal()
+            .filter(|t| t.debug_routes())
+            .map(|t| t.diagnostics())
+            .unwrap_or_default();
         let view = self.cameras.get_mut(&id)?;
+        if view.dirty || view.world_revision != Some(self.world.revision()) {
+            let exclude = view.follow.map(|i| self.world.items()[i].id);
+            view.dirty |= view
+                .camera
+                .resolve_orbit(&*self.world, Vec3::default(), exclude, 0.);
+        }
         if view.dirty || view.world_revision != Some(self.world.revision()) {
             self.serial = self.serial.wrapping_add(1);
             if let Err(error) = view.frame.build(
@@ -813,6 +1373,18 @@ impl App {
                 return None;
             }
             view.world_revision = Some(self.world.revision());
+            if !routes.is_empty() {
+                let paths: Vec<_> = routes
+                    .iter()
+                    .map(|d| (d.feedback.execution.position, d.route.as_slice()))
+                    .collect();
+                append_route_guides(&mut view.frame, &paths);
+            }
+            if let Some(e) = self.editor.as_mut().filter(|e| !e.playing && !e.preview) {
+                e.refresh_guides(&view.camera, &self.library.config);
+                view.frame.grid.clone_from(&e.guides.vertices);
+                view.frame.guide_ends = e.guides.ends;
+            }
             view.dirty = false;
         }
         Some(&view.frame)
@@ -821,6 +1393,25 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn route_guides_draw_more_than_two_actors_with_waypoints_and_valid_groups() {
+        let mut frame = Frame::default();
+        frame.grid.extend([Vec3::default(), Vec3::new(1., 0., 0.)]);
+        let route = [Vec3::new(3., 4., 2.)];
+        let paths = vec![(Vec3::default(), route.as_slice()); 128];
+        append_route_guides(&mut frame, &paths);
+        assert_eq!(frame.grid.len(), 2 + 128 * 6);
+        assert_eq!(frame.guide_ends, [2, 2 + 64 * 6, 2 + 128 * 6]);
+        assert_eq!(frame.grid[3], Vec3::new(3., 4., 2.12));
+        assert!(frame.guide_ends.iter().all(|end| end % 2 == 0));
+        let mut bounded = Frame::default();
+        let long = vec![Vec3::new(2., 0., 0.); 200];
+        append_route_guides(&mut bounded, &vec![(Vec3::default(), long.as_slice()); 300]);
+        assert_eq!(bounded.grid.len(), 256 * 128 * 6);
+        let mut empty = Frame::default();
+        append_route_guides(&mut empty, &[]);
+        assert_eq!(empty.guide_ends, [0; 3]);
+    }
     #[test]
     fn ready_prompt_locks_movement_but_not_camera_controls() {
         let library = Box::leak(Box::new(

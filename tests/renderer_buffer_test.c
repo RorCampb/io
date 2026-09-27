@@ -4,7 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "../csrc/renderer.h"
+#include "../csrc/editor_ui.h"
+#include "../csrc/attention_ui.h"
 
 static void check_contents(const DynamicBuffer *b, const void *expected, size_t bytes) {
     void *actual=malloc(bytes);
@@ -249,23 +252,418 @@ static void check_game_feedback(void){
     puts("PASS: selected mesh silhouette, projectile glow, damage numbers and UI hit exclusion");
 }
 
+static void capture_camera(const char *name, const unsigned char *pixels){
+    char path[128];snprintf(path,sizeof(path),"build/camera-%s.ppm",name);
+    FILE *f=fopen(path,"wb");assert(f);fprintf(f,"P6\n1280 800\n255\n");
+    for(int y=799;y>=0;y--)for(int x=0;x<1280;x++)assert(fwrite(pixels+((size_t)y*1280+x)*4,1,3,f)==3);
+    assert(fclose(f)==0);
+}
+
+static void check_camera_depth_sweep(IoApp *app, Renderer *r, unsigned char *pixels){
+    unsigned char *reference=malloc(1280*800*4);assert(reference);
+    assert(io_app_dispatch(app,(IoAction){.kind=IO_ACTION_ZOOM,.x=logf(5.f)/0.12f}));
+    for(int step=0;step<120;step++){
+        io_app_update(app,1.f/60.f);
+        IoFrame frame;assert(io_app_frame(app,1,&frame));
+        IoInstance surfaces[2];size_t found=0;
+        for(size_t i=0;i<frame.instance_count;i++)if(frame.instances[i].item_id<=2){
+            assert(found<2);surfaces[frame.instances[i].item_id-1]=frame.instances[i];found++;
+        }
+        assert(found==2);
+        // Use the real path and floor, but remove occluders from this pixel test.
+        IoFrame isolated=frame;isolated.grid_vertex_count=0;isolated.joint_count=0;
+        isolated.instances=&surfaces[1];isolated.instance_count=1;
+        isolated.serial=UINT64_MAX;
+        assert(renderer_draw(r,&isolated));
+        glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,reference);
+        for(int order=0;order<2;order++){
+            if(order){IoInstance tmp=surfaces[0];surfaces[0]=surfaces[1];surfaces[1]=tmp;}
+            isolated.instances=surfaces;isolated.instance_count=2;
+            isolated.serial=UINT64_MAX-1-(uint64_t)order;
+            assert(renderer_draw(r,&isolated));
+            glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+            const float *m=frame.clip_from_world;
+            size_t checked=0,wrong=0;
+            for(int ix=0;ix<5;ix++)for(int iy=0;iy<37;iy++){
+                float wx=48.8f+ix*0.6f,wy=41.f+iy*0.5f,wz=-0.01f;
+                float w=m[3]*wx+m[7]*wy+m[11]*wz+m[15];
+                int x=(int)(((m[0]*wx+m[4]*wy+m[8]*wz+m[12])/w+1)*640);
+                int y=(int)(((m[1]*wx+m[5]*wy+m[9]*wz+m[13])/w+1)*400);
+                if(w<=0 || x<2 || x>=1278 || y<2 || y>=798)continue;
+                size_t at=((size_t)y*1280+x)*4;checked++;
+                for(int c=0;c<3;c++)if(abs((int)pixels[at+c]-(int)reference[at+c])>3){wrong++;break;}
+            }
+            assert(checked>50);
+            if(wrong){
+                fprintf(stderr,"Depth sweep step %d, order %d: %zu/%zu path samples obscured by lower floor\n",step,order,wrong,checked);
+                assert(renderer_draw(r,&frame));
+                glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+                capture_camera("depth-failure",pixels);
+            }
+            assert(wrong==0);
+        }
+        if(step==2){
+            assert(renderer_draw(r,&frame));
+            glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+            capture_camera("transition",pixels);
+        }
+    }
+    free(reference);
+    puts("PASS: 120 eased zoom frames retain path/floor depth separation in both draw orders");
+}
+
+static void check_camera(void){
+    IoApp *app=io_app_new();assert(app);
+    Renderer r;assert(renderer_init(&r));
+    assert(renderer_resize(&r,1280,800,1280,800));
+    const size_t bytes=1280*800*4;
+    unsigned char *pixels=malloc(bytes);assert(pixels);
+    const float steps[]={0.f,7.635756f,5.776227f,-13.411983f};
+    const char *names[]={"ortho","blend","perspective","return"};
+    for(size_t i=0;i<4;i++){
+        assert(io_app_dispatch(app,(IoAction){.kind=IO_ACTION_ZOOM,.x=steps[i]}));
+        for(int tick=0;tick<120;tick++)io_app_update(app,1.f/60.f);
+        IoFrame frame;assert(io_app_frame(app,1,&frame));
+        const float *m=frame.clip_from_world;
+        float convergence=sqrtf(m[3]*m[3]+m[7]*m[7]+m[11]*m[11]);
+        if(i==0 || i==3)assert(convergence==0.f);else assert(convergence>0.f);
+        assert(frame.instance_count>0 && frame.joint_count==65);
+        assert(renderer_draw(&r,&frame));
+        glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+        assert(glGetError()==GL_NO_ERROR);
+        // Every stage retains the animated character, not merely a valid empty frame.
+        size_t red=0;
+        for(size_t p=0;p<bytes;p+=4)if(pixels[p]>pixels[p+1]*1.4f && pixels[p]>pixels[p+2]*1.4f && pixels[p]>90)red++;
+        assert(red>100);
+        capture_camera(names[i],pixels);
+        // Perspective billboard sizing/placement uses the same homogeneous w.
+        IoGameView game={.enabled=1,.projectile_count=1};
+        game.projectiles[0]=(IoProjectileView){.position={50,50,4},.radius=0.3f};
+        hud_set_game(&r.hud,&game);assert(renderer_draw(&r,&frame));
+        float w=m[3]*50+m[7]*50+m[11]*4+m[15];
+        int x=(int)(((m[0]*50+m[4]*50+m[8]*4+m[12])/w+1)*640);
+        int y=(int)(((m[1]*50+m[5]*50+m[9]*4+m[13])/w+1)*400);
+        assert(x>=0 && x<1280 && y>=0 && y<800);
+        unsigned char pixel[4];glReadPixels(x,y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+        assert(pixel[2]>220 && pixel[1]>180);
+        game.enabled=0;hud_set_game(&r.hud,&game);
+    }
+    check_camera_depth_sweep(app,&r,pixels);
+    free(pixels);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: orthographic/blended/perspective skinned drawing, reversible zoom and depth-correct projectiles");
+}
+
+static void dungeon_move(IoApp *app,int ticks,float forward){
+    for(int i=0;i<ticks;i++){
+        IoFrame f;assert(io_app_frame(app,1,&f));
+        float x=f.clip_from_world[0],y=f.clip_from_world[4],length=hypotf(x,y);
+        assert(io_app_game_action(app,2,0,-y/length*forward,x/length*forward));
+        io_app_update(app,1.f/60.f);
+    }
+}
+static void check_dungeon(void){
+    IoApp *app=io_app_new();assert(app);
+    Renderer r;assert(renderer_init(&r));assert(renderer_resize(&r,1280,800,1280,800));
+    unsigned char *pixels=malloc(1280*800*4);assert(pixels);
+    IoGameView game;assert(io_app_game_view(app,&game));assert(game.enabled && game.free_movement && game.selected_item);
+    uint64_t hero=game.selected_item;IoItemState state;
+    io_app_update(app,0.1f);
+    dungeon_move(app,60,1);
+    assert(io_app_item_state(app,hero,&state));assert(fabsf(state.anchor.y-54.6f)<0.02f);
+    IoFrame jog;assert(io_app_frame(app,1,&jog));assert(renderer_draw(&r,&jog));
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);capture_camera("dungeon-jog",pixels);
+    dungeon_move(app,60,-1);assert(io_app_game_action(app,2,0,0,0));
+    assert(io_app_game_action(app,4,0,0,0));io_app_update(app,0.2f);
+    assert(io_app_item_state(app,hero,&state));assert(state.anchor.z>0.3f);
+    for(int i=0;i<100;i++)io_app_update(app,1.f/60.f);
+    dungeon_move(app,300,1);
+    assert(io_app_item_state(app,hero,&state));assert(state.anchor.y>50.13f && state.anchor.y<50.17f);
+    assert(io_app_game_action(app,12,1,0,0));dungeon_move(app,260,1);
+    /* The player, not an interior rig, chooses the low doorway angle. */
+    assert(io_app_game_action(app,8,0,-0.785398163f,-0.528213f));
+    assert(io_app_item_state(app,hero,&state));assert(state.anchor.y>45.8f && state.anchor.y<46.2f);
+    assert(io_app_game_action(app,2,0,0,0));assert(io_app_game_action(app,12,0,0,0));
+    for(int i=0;i<30;i++)io_app_update(app,1.f/60.f);
+    assert(io_app_game_view(app,&game));
+    bool crouched=false;for(uint32_t i=0;i<game.line_count;i++)if(strstr(game.lines[i],"CROUCHED"))crouched=true;
+    assert(crouched);
+    for(int stage=0;stage<2;stage++){
+        if(stage)dungeon_move(app,360,1);
+        IoFrame frame;assert(io_app_frame(app,1,&frame));assert(frame.joint_count==65);
+        assert(renderer_draw(&r,&frame));glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+        size_t red=0;for(size_t p=0;p<1280*800*4;p+=4)if(pixels[p]>pixels[p+1]*1.4f && pixels[p]>pixels[p+2]*1.4f && pixels[p]>90)red++;
+        fprintf(stderr,"Dungeon %s: %zu character pixels\n",stage?"chamber":"passage",red);
+        capture_camera(stage?"dungeon-chamber":"dungeon-passage",pixels);
+        assert(red>100);
+        if(stage){
+            assert(io_app_game_action(app,2,0,0,0));
+            assert(!io_app_game_action(app,13,0,0,0));
+            for(int i=0;i<360;i++)io_app_update(app,1.f/60.f);
+            assert(io_app_frame(app,1,&frame));float following[16];memcpy(following,frame.clip_from_world,sizeof(following));
+            assert(renderer_draw(&r,&frame));glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+            capture_camera("dungeon-free-orbit",pixels);
+            IoItemState before,after;assert(io_app_item_state(app,hero,&before));
+            dungeon_move(app,30,-1);
+            assert(io_app_item_state(app,hero,&after));assert(fabsf(after.anchor.y-before.anchor.y)>0.1f);
+            assert(io_app_frame(app,1,&frame));
+            assert(memcmp(following,frame.clip_from_world,sizeof(following))!=0);
+            assert(io_app_game_action(app,2,0,0,0));assert(io_app_game_action(app,8,0,0.4f,0.1f));
+            for(int i=0;i<120;i++)io_app_update(app,1.f/60.f);
+            assert(io_app_frame(app,1,&frame));assert(memcmp(following,frame.clip_from_world,sizeof(following))!=0);
+            assert(renderer_draw(&r,&frame));
+        }
+        if(!stage){
+            for(int orbit=0;orbit<72;orbit++){
+                assert(io_app_dispatch(app,(IoAction){.kind=IO_ACTION_ORBIT,.x=6.283185307f/72.f}));
+                if(orbit%18==0)assert(io_app_dispatch(app,(IoAction){.kind=IO_ACTION_ZOOM,.x=(orbit/18)%2?4.f:-4.f}));
+                io_app_update(app,1.f/60.f);
+                assert(io_app_frame(app,1,&frame));
+                const float *m=frame.clip_from_world;
+                float k2=m[3]*m[3]+m[7]*m[7]+m[11]*m[11];
+                float distance=1.f/sqrtf(k2);
+                assert(isfinite(distance) && distance>0.05f && distance<=35.01f);
+                assert(renderer_draw(&r,&frame));
+            }
+            assert(io_app_dispatch(app,(IoAction){.kind=IO_ACTION_ZOOM,.x=-20.f}));
+            for(int i=0;i<120;i++)io_app_update(app,1.f/60.f);
+            assert(io_app_frame(app,1,&frame));
+            float wide_k2=frame.clip_from_world[3]*frame.clip_from_world[3]+frame.clip_from_world[7]*frame.clip_from_world[7]+frame.clip_from_world[11]*frame.clip_from_world[11];
+            assert(isfinite(wide_k2) && wide_k2>0.f);
+            assert(renderer_draw(&r,&frame));
+            glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+            capture_camera("dungeon-passage-wide",pixels);
+            assert(io_app_dispatch(app,(IoAction){.kind=IO_ACTION_ZOOM,.x=10.f}));
+        }
+    }
+    assert(io_app_game_view(app,&game));
+    bool standing=false;for(uint32_t i=0;i<game.line_count;i++)if(strstr(game.lines[i],"STANDING"))standing=true;
+    assert(standing);
+    free(pixels);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: jogging, native jump, physical lintel blocking, crouch clearance, auto-stand and visible interior character");
+    puts("PASS: user-directed passage orbit, collision-limited zoom and room-independent follow");
+}
+
+static void editor_click(EditorUi *ui,IoApp *app,int x,int y){
+    SDL_Event event={.type=SDL_MOUSEBUTTONDOWN};event.button.button=SDL_BUTTON_LEFT;event.button.x=x;event.button.y=y;
+    assert(editor_ui_event(ui,app,&event));event.type=SDL_MOUSEBUTTONUP;assert(editor_ui_event(ui,app,&event));
+}
+static void check_editor(void){
+    assert(sizeof(IoEditorView)==1028);
+    IoApp *app=io_app_new();assert(app);EditorUi ui;assert(editor_ui_init(&ui,app));
+    editor_ui_refresh(&ui,app,1280,800);assert(ui.view.enabled&&!ui.view.playing&&!ui.view.dirty);
+    assert(!io_app_editor_enable(app));
+    IoGameView game;assert(io_app_game_view(app,&game));IoItemState before,after;
+    assert(io_app_item_state(app,game.selected_item,&before));
+    assert(!io_app_game_action(app,2,0,0,1));io_app_update(app,0.25f);
+    assert(io_app_item_state(app,game.selected_item,&after));assert(memcmp(&before.anchor,&after.anchor,sizeof(IoVec3))==0);
+    editor_click(&ui,app,50,190);assert(ui.view.selected==1);
+    IoFrame frame;assert(io_app_frame(app,1,&frame));assert(frame.grid_vertex_count==44);
+    assert(ui.view.envelope);
+    editor_click(&ui,app,1140,85);assert(!ui.editing);
+    assert(!io_app_editor_command(app,IO_EDIT_SET,0,0,7));
+    assert(!io_app_editor_command(app,IO_EDIT_CAPTURE,0,0,0));
+    editor_click(&ui,app,1140,178);assert(ui.editing);
+    SDL_Event text={.type=SDL_TEXTINPUT};snprintf(text.text.text,sizeof(text.text.text),"0.8");assert(editor_ui_event(&ui,app,&text));
+    SDL_Event key={.type=SDL_KEYDOWN};key.key.keysym.sym=SDLK_w;assert(editor_ui_event(&ui,app,&key));
+    key.key.keysym.sym=SDLK_RETURN;assert(editor_ui_event(&ui,app,&key));assert(!ui.editing&&ui.view.values[3]==.8f&&ui.view.dirty);
+    assert(!io_app_editor_command(app,IO_EDIT_SET,0,1,100));
+    editor_click(&ui,app,40,90);assert(ui.view.values[3]==.7f&&!ui.view.dirty);
+    editor_click(&ui,app,140,90);assert(ui.view.values[3]==.8f&&ui.view.dirty);
+    Renderer r;assert(renderer_init(&r));assert(renderer_resize(&r,1280,800,1280,800));
+    unsigned char *pixels=malloc(1280*800*4);assert(pixels);
+    for(int preview=0;preview<2;preview++){
+        if(preview)editor_click(&ui,app,50,500);
+        assert(io_app_frame(app,1,&frame));assert(renderer_draw(&r,&frame));
+        if(!preview)assert(renderer_draw_guides(&r,&frame));
+        assert(editor_ui_draw(&ui));
+        glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+        size_t gold=0;for(size_t p=0;p<1280*800*4;p+=4)if(pixels[p]>200&&pixels[p+1]>130&&pixels[p+2]<100)gold++;
+        assert(gold>1000);capture_camera(preview?"editor-rig":"editor-volume",pixels);
+    }
+    editor_click(&ui,app,50,610);assert(ui.view.trajectory&&!ui.view.preview);
+    assert(io_app_frame(app,1,&frame));assert(frame.guide_ends[0]==44&&frame.guide_ends[1]>44&&frame.guide_ends[2]==frame.grid_vertex_count);
+    assert(frame.grid_vertex_count<3000);
+    assert(renderer_draw(&r,&frame));assert(renderer_draw_guides(&r,&frame));assert(editor_ui_draw(&ui));
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+    size_t cyan=0,orange=0;
+    for(size_t p=0;p<1280*800*4;p+=4){
+        if(pixels[p]<100&&pixels[p+1]>150&&pixels[p+2]>180)cyan++;
+        if(pixels[p]>180&&pixels[p+1]>90&&pixels[p+1]<165&&pixels[p+2]<100)orange++;
+    }
+    assert(cyan>100&&orange>100);capture_camera("editor-trajectory",pixels);
+    float fov=ui.view.values[15];editor_click(&ui,app,1254,369);assert(ui.view.values[15]==fov+2);
+    assert(io_app_frame(app,1,&frame));assert(renderer_draw(&r,&frame));assert(renderer_draw_guides(&r,&frame));
+    IoFrame bad=frame;bad.guide_ends[1]=frame.grid_vertex_count+2;assert(!renderer_draw_guides(&r,&bad));
+    key.key.keysym.sym=SDLK_F5;assert(editor_ui_event(&ui,app,&key));assert(ui.view.playing);
+    assert(!io_app_editor_command(app,IO_EDIT_SET,0,0,5));
+    assert(io_app_game_action(app,4,0,0,0));io_app_update(app,0.2f);
+    assert(io_app_item_state(app,game.selected_item,&after));assert(after.anchor.z>before.anchor.z+.2f);
+    assert(editor_ui_event(&ui,app,&key));assert(!ui.view.playing&&ui.view.values[3]==.8f&&ui.view.dirty);
+    assert(io_app_item_state(app,game.selected_item,&after));assert(memcmp(&before.anchor,&after.anchor,sizeof(IoVec3))==0);
+    SDL_Event click={.type=SDL_MOUSEBUTTONDOWN};click.button.x=600;click.button.y=400;click.button.button=SDL_BUTTON_LEFT;
+    assert(!editor_ui_event(&ui,app,&click));
+    editor_click(&ui,app,50,255);assert(ui.view.portal && ui.view.selected==3 && ui.view.values[6]==3);
+    assert(io_app_editor_command(app,IO_EDIT_SET,0,6,2.8f));assert(io_app_editor_command(app,IO_EDIT_COMMIT,0,0,0));
+    assert(!io_app_editor_command(app,IO_EDIT_SET,0,6,100));
+    assert(io_app_frame(app,1,&frame));assert(frame.grid_vertex_count==10);
+    assert(renderer_draw(&r,&frame));assert(renderer_draw_guides(&r,&frame));editor_ui_refresh(&ui,app,1280,800);assert(editor_ui_draw(&ui));
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);capture_camera("editor-portal",pixels);
+    editor_click(&ui,app,40,90);assert(ui.view.values[6]==3);
+    editor_click(&ui,app,50,190);editor_click(&ui,app,50,645);assert(ui.view.portal&&ui.view.count==6);
+    editor_click(&ui,app,40,90);assert(ui.view.count==5);
+    free(pixels);editor_ui_destroy(&ui);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: native editor controls, portal authoring/validation/undo, trajectory guides and isolated play/stop");
+}
+
+static void check_attention(void){
+    IoApp *app=io_app_new();assert(app);
+    Renderer r;assert(renderer_init(&r));assert(renderer_resize(&r,1280,800,1280,800));
+    unsigned char *pixels=malloc(1280*800*4);assert(pixels);
+    IoGameView game;assert(io_app_game_view(app,&game));assert(game.meter_count==2);
+    assert(strcmp(game.meters[0].label,"RUNNER ATTENTION")==0);
+    assert(strcmp(game.meters[1].label,"FOCUS")==0);
+    float peak=0.f,peak_focus=0.f,previous=0.f;
+    bool hidden=false,partial=false,decayed=false;
+    for(int step=0;step<1800;step++){
+        io_app_update(app,1.f/60.f);
+        IoFrame frame;assert(io_app_frame(app,1,&frame));
+        assert(io_app_game_view(app,&game));assert(game.meter_count==2);
+        for(unsigned int i=0;i<2;i++)assert(isfinite(game.meters[i].value)&&game.meters[i].value>=0.f&&game.meters[i].value<=1.f);
+        assert(game.meters[0].x==game.meters[1].x && game.meters[1].y-game.meters[0].y==32.f);
+        float focus=game.meters[1].value,attention=game.meters[0].value;
+        peak_focus=fmaxf(peak_focus,focus);
+        assert(attention<=peak_focus+1e-6f);
+        hidden|=focus==0.f;partial|=focus>0.f&&focus<.99f;
+        decayed|=focus==0.f&&attention<previous&&attention>.1f;
+        previous=attention;peak=fmaxf(peak,attention);
+        if(step==60||step==240||step==600){
+            assert(renderer_draw(&r,&frame));hud_set_game(&r.hud,&game);assert(renderer_draw_hud(&r));
+            glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+            capture_camera(step==60?"attention-visible":step==240?"attention-covered":"attention-return",pixels);
+            const IoWorldMeter *meter=&game.meters[0];
+            int x=(int)(meter->x-98.f),y=799-(int)(meter->y+18.f);
+            assert(x>=0&&x<1280&&y>=0&&y<800);
+            const unsigned char *pixel=pixels+(y*1280+x)*4;
+            if(attention>.05f)assert(pixel[0]>200 && pixel[1]>150 && pixel[2]<100);
+        }
+    }
+    assert(hidden&&partial&&decayed&&peak>.5f);
+    IoGameView before=game;
+    // The target is now the camera pivot; yaw alone keeps its head centered.
+    assert(io_app_game_action(app,8,0,.3f,.2f));io_app_update(app,0.f);
+    assert(io_app_game_view(app,&game));
+    assert(fabsf(before.meters[0].x-game.meters[0].x)>1.f||fabsf(before.meters[0].y-game.meters[0].y)>1.f);
+    free(pixels);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: NPC awareness of player, directional focus gauges, decay and orbit projection");
+}
+
+static void check_attention_controls(IoApp *app,Renderer *r){
+    AttentionUi ui;assert(attention_ui_init(&ui));
+    attention_ui_refresh(&ui,app,1280,800);
+    assert(ui.available&&ui.applied.has_pursuit&&ui.applied.fov_degrees==240);
+    assert(!io_app_tune_attention(app,ui.applied.observer,ui.applied.target,NAN,.5f));
+    SDL_Event e={0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
+    e.button.x=192;e.button.y=640;
+    assert(attention_ui_event(&ui,&e)&&ui.drag==1);
+    e.type=SDL_MOUSEMOTION;e.motion.x=900;e.motion.y=640;
+    assert(attention_ui_event(&ui,&e));
+    assert(ui.desired.fov_degrees==360);
+    e.type=SDL_MOUSEBUTTONUP;e.button.button=SDL_BUTTON_LEFT;e.button.x=900;e.button.y=640;
+    assert(attention_ui_event(&ui,&e)&&!ui.drag);
+    attention_ui_submit(&ui,app);attention_ui_refresh(&ui,app,1280,800);
+    assert(ui.applied.fov_degrees==360&&!ui.pending);
+    e.type=SDL_MOUSEBUTTONDOWN;e.button.x=192;e.button.y=692;
+    assert(attention_ui_event(&ui,&e)&&ui.drag==2);
+    attention_ui_submit(&ui,app);attention_ui_refresh(&ui,app,1280,800);
+    assert(fabsf(ui.applied.notice_attention-.51f)<.001f);
+    e.type=SDL_WINDOWEVENT;e.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+    attention_ui_event(&ui,&e);assert(!ui.drag);
+    e=(SDL_Event){0};e.type=SDL_KEYDOWN;e.key.keysym.sym=SDLK_F2;
+    assert(attention_ui_event(&ui,&e)&&ui.hidden);
+    assert(attention_ui_event(&ui,&e)&&!ui.hidden);
+    e=(SDL_Event){0};e.type=SDL_MOUSEBUTTONDOWN;e.button.button=SDL_BUTTON_LEFT;
+    e.button.x=90;e.button.y=768;
+    assert(attention_ui_event(&ui,&e));attention_ui_submit(&ui,app);
+    attention_ui_refresh(&ui,app,1280,800);
+    assert(ui.applied.fov_degrees==240&&fabsf(ui.applied.notice_attention-.18f)<.001f);
+    IoFrame frame;assert(io_app_frame(app,1,&frame));assert(renderer_draw(r,&frame));
+    assert(attention_ui_draw(&ui));
+    unsigned char *pixels=malloc(1280*800*4);assert(pixels);
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+    capture_camera("attention-sliders",pixels);free(pixels);
+    assert(glGetError()==GL_NO_ERROR);
+    attention_ui_destroy(&ui);
+    puts("PASS: live vision sliders, clamped dragging, focus release, hide and reset");
+}
+
+static void check_pursuit(void){
+    IoApp *app=io_app_new();assert(app);
+    Renderer r;assert(renderer_init(&r));assert(renderer_resize(&r,1280,800,1280,800));
+    check_attention_controls(app,&r);
+    unsigned char *pixels=malloc(1280*800*4);assert(pixels);
+    bool patrol=false,chase=false,tagged=false;
+    IoGameView game;
+    for(int step=0;step<2400;step++){
+        io_app_update(app,1.f/60.f);
+        assert(io_app_game_view(app,&game));assert(game.meter_count==2);
+        assert(strstr(game.lines[0],"CAT AND MOUSE"));
+        const char *capture=NULL;
+        for(unsigned int i=0;i<game.line_count;i++){
+            if(!patrol&&strstr(game.lines[i],": PATROL")){patrol=true;capture="cat-mouse-patrol";}
+            if(!chase&&strstr(game.lines[i],": CHASE")){chase=true;capture="cat-mouse-chase";}
+            if(!tagged&&strstr(game.lines[i],": TAGGED")){tagged=true;capture="cat-mouse-tagged";}
+        }
+        if(capture){
+            IoFrame frame;assert(io_app_frame(app,1,&frame));
+            assert(renderer_draw(&r,&frame));hud_set_game(&r.hud,&game);assert(renderer_draw_hud(&r));
+            glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+            capture_camera(capture,pixels);
+        }
+        if(tagged)break;
+    }
+    assert(patrol&&chase&&tagged);
+    IoItemState before,after;
+    assert(io_app_item_state(app,game.selected_item,&before));
+    assert(io_app_game_action(app,2,0,1.f,0.f));
+    for(int step=0;step<30;step++)io_app_update(app,1.f/60.f);
+    assert(io_app_item_state(app,game.selected_item,&after));
+    assert(hypotf(after.anchor.x-before.anchor.x,after.anchor.y-before.anchor.y)>.2f);
+    free(pixels);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: cat-and-mouse arena renders, patrol/chase/tag HUD and player escape movement");
+}
+
 int main(int argc,char **argv) {
     bool variants=argc==2 && strcmp(argv[1],"--variants")==0;
     bool game=argc==2 && strcmp(argv[1],"--game")==0;
+    bool camera=argc==2 && strcmp(argv[1],"--camera")==0;
+    bool dungeon=argc==2 && strcmp(argv[1],"--dungeon")==0;
+    bool editor=argc==2 && strcmp(argv[1],"--editor")==0;
+    bool attention=argc==2 && strcmp(argv[1],"--attention")==0;
+    bool pursuit=argc==2 && strcmp(argv[1],"--pursuit")==0;
     if(variants)assert(setenv("IO_SCENE","assets/street-kit/variants-demo.json",1)==0);
     if(game)assert(setenv("IO_SCENE","assets/game/encounter.json",1)==0);
+    if(camera)assert(setenv("IO_SCENE","assets/camera/zoom.json",1)==0);
+    if(dungeon||editor)assert(setenv("IO_SCENE","assets/dungeon/entry.json",1)==0);
+    if(attention)assert(setenv("IO_SCENE","assets/dungeon/attention.json",1)==0);
+    if(pursuit)assert(setenv("IO_SCENE","assets/dungeon/cat-mouse.json",1)==0);
     assert(SDL_Init(SDL_INIT_VIDEO)==0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24);
+    if(camera){SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS,1);SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES,4);}
     SDL_Window *window=SDL_CreateWindow("io buffer tests",0,0,1280,800,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
     assert(window);
     SDL_GLContext context=SDL_GL_CreateContext(window);
     assert(context && SDL_GL_MakeCurrent(window,context)==0);
-    check_hud();
-    if(game)check_game_feedback();
+    if(!camera && !dungeon && !editor && !attention && !pursuit)check_hud();
+    if(pursuit)check_pursuit();
+    else if(attention)check_attention();
+    else if(editor)check_editor();
+    else if(dungeon)check_dungeon();
+    else if(camera)check_camera();
+    else if(game)check_game_feedback();
     else if(variants)check_variants();
     else {
         check_stream(GL_ARRAY_BUFFER);

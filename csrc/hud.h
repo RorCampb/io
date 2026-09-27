@@ -26,4 +26,6 @@ bool hud_contains_point(const Hud *hud,float x,float y);
 void hud_presented(Hud *hud,double now,const IoWorkerStats *worker);
 void hud_lines(const Hud *hud,char lines[HUD_LINE_COUNT][HUD_LINE_LENGTH]);
 bool hud_draw(Hud *hud,int logical_width,int logical_height);
+typedef struct HudElement {float x,y,w,h,scale,color[4];char text[64];} HudElement;
+bool hud_draw_elements(Hud *hud,int width,int height,const HudElement *elements,size_t count);
 #endif

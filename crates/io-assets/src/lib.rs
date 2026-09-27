@@ -4,7 +4,7 @@ use io_types::Vec3;
 use std::path::Path;
 mod animated;
 pub mod contract;
-pub use animated::{load_model, Model, Vertex};
+pub use animated::{load_model, Model, PoseSample, Vertex};
 
 pub static BOX_VERTICES: [Vec3; 8] = [
     Vec3::new(0., 0., 0.),

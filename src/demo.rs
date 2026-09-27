@@ -13,6 +13,121 @@ fn vec(v: [f32; 3]) -> Vec3 {
     Vec3::new(v[0], v[1], v[2])
 }
 pub fn game(library: &ModelLibrary, world: &World) -> Result<crate::game::Game, String> {
+    if let Some(def) = &library.config.traversal {
+        let bind = |name: &str, settings: &io_locomotion::Locomotion| -> Result<_, String> {
+            let index = library
+                .config
+                .items
+                .iter()
+                .position(|i| i.name == name)
+                .ok_or_else(|| format!("unknown traversal actor: {name}"))?;
+            let player = world.items()[index].id;
+            let renderable = world.items()[index]
+                .renderable
+                .as_ref()
+                .ok_or("traversal requires character model")?;
+            let appearance = library
+                .appearance(renderable.appearance_id)
+                .ok_or("unknown traversal appearance")?;
+            let model = library
+                .mesh(appearance.base_mesh)
+                .ok_or("unknown traversal mesh")?;
+            if model.joint_count() == 0 {
+                return Err("traversal requires a rigged model".into());
+            }
+            let clips = settings
+                .clips
+                .iter()
+                .map(|(state, c)| {
+                    let (index, clip) = model
+                        .clips()
+                        .iter()
+                        .enumerate()
+                        .find(|(_, v)| v.name() == c.clip)
+                        .ok_or_else(|| format!("unknown traversal clip {}", c.clip))?;
+                    Ok((*state, (index, f64::from(clip.duration()))))
+                })
+                .collect::<Result<_, String>>()?;
+            Ok((player, clips))
+        };
+        let (player, clips) = bind(&def.player, &def.locomotion)?;
+        let mut agents = Vec::new();
+        if let Some(navigation) = &def.navigation {
+            for npc in &navigation.agents {
+                let settings = npc.locomotion.as_ref().unwrap_or(&def.locomotion);
+                let (actor, clips) = bind(&npc.item, settings)?;
+                agents.push(io_playground::NpcBinding {
+                    steering: npc.steering,
+                    motor: io_locomotion::Motor::new(settings.clone(), actor, clips, world)?,
+                    goal: vec(npc.goal),
+                    can_crouch: npc.can_crouch,
+                    familiar_points: npc.familiar_points.iter().copied().map(vec).collect(),
+                    on_arrival: npc.on_arrival.clone(),
+                    pursuit: npc
+                        .pursuit
+                        .as_ref()
+                        .map(|p| {
+                            let target = library
+                                .config
+                                .items
+                                .iter()
+                                .position(|i| i.name == p.target)
+                                .map(|i| world.items()[i].id)
+                                .ok_or_else(|| format!("unknown pursuit target: {}", p.target))?;
+                            Ok::<_, String>(io_playground::PursuitBinding {
+                                target,
+                                settings: p.settings,
+                            })
+                        })
+                        .transpose()?,
+                });
+            }
+        }
+        let observations = def
+            .observations
+            .iter()
+            .map(|spec| {
+                let resolve = |name: &str| {
+                    library
+                        .config
+                        .items
+                        .iter()
+                        .position(|i| i.name == name)
+                        .map(|i| world.items()[i].id)
+                        .ok_or_else(|| format!("unknown observation actor: {name}"))
+                };
+                Ok(io_playground::ObservationBinding {
+                    observer: resolve(&spec.observer)?,
+                    target: resolve(&spec.target)?,
+                    label: spec.observer.clone(),
+                    vision: spec.vision,
+                    notice_attention: spec.notice_attention,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut plugin =
+            io_playground::Traversal::with_npcs(def.clone(), player, clips, agents, world)?
+                .with_observations(observations, world)?;
+        let barriers = def
+            .barriers()
+            .map(|barrier| {
+                let index = library
+                    .config
+                    .items
+                    .iter()
+                    .position(|i| i.name == barrier.item)
+                    .ok_or("unknown playground barrier")?;
+                Ok(world.items()[index].id)
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        plugin = plugin.with_barriers(&barriers, world)?;
+        let session =
+            io_game::Session::register(plugin, world).map_err(|e| format!("traversal: {e:?}"))?;
+        return Ok(crate::game::Game::Traversal {
+            session: Box::new(session),
+            inactive: Default::default(),
+        });
+    }
     if let Some(definition) = &library.config.exploration {
         let names = library
             .config
@@ -87,7 +202,11 @@ pub fn world(library: &ModelLibrary) -> Result<World, String> {
             return Err(format!("invalid transform/color: {}", spec.name));
         }
         let mut item = Item {
-            grounded: spec.grounded.as_ref().map(|g| g.resolve()).transpose()?,
+            character_body: spec
+                .character_body
+                .as_ref()
+                .map(|g| g.resolve())
+                .transpose()?,
             physics_body: spec
                 .physics_body
                 .as_ref()
@@ -206,6 +325,9 @@ pub fn world(library: &ModelLibrary) -> Result<World, String> {
         }
     }
     let mut world = World::try_new(Space::try_new(vec(config.dimensions))?, items)?;
+    let (regions, portals) =
+        io_scene::resolve_layout(&config.interiors, &config.portals, config.origin)?;
+    world.set_space_layout(regions, portals)?;
     world.set_physics_settings(config.physics.resolve()?)?;
     if let Some(terrain) = &config.terrain {
         world.set_terrain(terrain.resolve()?);

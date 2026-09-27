@@ -31,6 +31,10 @@ int main(void){
     event.key.repeat=0;event.type=SDL_KEYUP;
     assert(input_game_translate(&event,true,&action)==INPUT_CONSUMED);
     IoItemState before,after;assert(io_app_item_state(app,2,&before));
+    event.type=SDL_KEYDOWN;event.key.keysym.sym=SDLK_TAB;
+    assert(input_game_translate(&event,true,&action)==INPUT_ACTION && action.kind==13);
+    event.key.repeat=1;assert(input_game_translate(&event,true,&action)==INPUT_CONSUMED);
+    event.key.repeat=0;event.type=SDL_KEYUP;assert(input_game_translate(&event,true,&action)==INPUT_CONSUMED);
     assert(io_app_game_action(app,2,0,1,0));io_app_update(app,0.125f);
     assert(io_app_item_state(app,2,&after) && after.anchor.x>before.anchor.x);
     assert(io_app_game_action(app,2,0,0,0));

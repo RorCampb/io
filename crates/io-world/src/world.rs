@@ -4,12 +4,17 @@ use io_types::{Rotation, Vec3, VisualStateId};
 use std::collections::HashMap;
 
 pub struct World {
+    changes: std::sync::Arc<crate::ChangeLog>,
+    interiors: std::sync::Arc<[crate::Interior]>,
+    portals: std::sync::Arc<[crate::Portal]>,
+    locations: Vec<crate::SpaceLocation>,
     terrain: Option<std::sync::Arc<crate::HeightField>>,
     space: Space,
     items: Vec<Item>,
     index: SpatialIndex,
     revision: u64,
     spatial_revision: u64,
+    navigation_revision: u64,
     by_id: HashMap<u64, usize>,
     physics_indices: Vec<usize>,
     physics_settings: PhysicsSettings,
@@ -21,6 +26,10 @@ pub struct World {
 impl World {
     pub fn snapshot(&self) -> crate::WorldSnapshot {
         crate::WorldSnapshot {
+            changes: self.changes.clone(),
+            interiors: self.interiors.clone(),
+            portals: self.portals.clone(),
+            locations: self.locations.clone(),
             terrain: self.terrain.clone(),
             space: self.space.clone(),
             items: self.items.clone(),
@@ -28,6 +37,7 @@ impl World {
             by_id: self.by_id.clone(),
             revision: self.revision,
             spatial_revision: self.spatial_revision,
+            navigation_revision: self.navigation_revision,
             physics_stats: self.physics_stats,
             physics_error: self.physics_error.clone(),
         }
@@ -54,7 +64,7 @@ impl World {
             if by_id.insert(item.id, id).is_some() {
                 return Err(format!("duplicate item ID: {}", item.id));
             }
-            index.insert(id, item.visibility_bounds());
+            index.insert(id, item.spatial_bounds());
         }
         let physics_indices = items
             .iter()
@@ -62,12 +72,17 @@ impl World {
             .filter_map(|(i, item)| item.physics_body.as_ref().map(|_| i))
             .collect();
         Ok(Self {
+            changes: Default::default(),
+            interiors: Default::default(),
+            portals: Default::default(),
+            locations: Vec::new(),
             terrain: None,
             space,
             items,
             index,
             revision: 0,
             spatial_revision: 0,
+            navigation_revision: 0,
             by_id,
             physics_indices,
             physics_settings: PhysicsSettings::default(),
@@ -80,11 +95,85 @@ impl World {
     pub fn physics_indices(&self) -> &[usize] {
         &self.physics_indices
     }
+    pub fn changes(&self) -> &crate::ChangeLog {
+        &self.changes
+    }
+    fn record_item(&mut self, index: usize, before: io_types::Bounds, occlusion: bool) {
+        let item = &self.items[index];
+        std::sync::Arc::make_mut(&mut self.changes).record(
+            crate::ChangeSource::Item(item.id),
+            Some(before),
+            Some(item.spatial_bounds()),
+            occlusion,
+        );
+    }
     pub fn terrain(&self) -> Option<&crate::HeightField> {
         self.terrain.as_deref()
     }
+    pub fn interiors(&self) -> &[crate::Interior] {
+        &self.interiors
+    }
+    pub fn set_interiors(&mut self, values: Vec<crate::Interior>) -> Result<(), String> {
+        self.set_space_layout(values, Vec::new())
+    }
+    pub fn set_space_layout(
+        &mut self,
+        regions: Vec<crate::Interior>,
+        portals: Vec<crate::Portal>,
+    ) -> Result<(), String> {
+        crate::validate_layout(&regions, &portals)?;
+        self.locations = if regions.is_empty() {
+            Vec::new()
+        } else {
+            self.items
+                .iter()
+                .map(|i| crate::locate_space(&regions, i.transform.anchor))
+                .collect()
+        };
+        self.interiors = regions.into();
+        self.portals = portals.into();
+        self.revision = self.revision.wrapping_add(1);
+        Ok(())
+    }
+    pub fn portals(&self) -> &[crate::Portal] {
+        &self.portals
+    }
+    pub fn space_location(&self, id: u64) -> Option<crate::SpaceLocation> {
+        self.by_id
+            .get(&id)
+            .map(|&i| self.locations.get(i).copied().unwrap_or_default())
+    }
+    fn moved_location(&mut self, index: usize, start: Vec3, end: Vec3) {
+        if start == end {
+            return;
+        }
+        if let Some(location) = self.locations.get_mut(index) {
+            *location = if self.portals.is_empty() {
+                crate::locate_space(&self.interiors, end)
+            } else {
+                crate::advance_location(&self.portals, *location, start, end)
+            };
+        }
+    }
+    /// Teleports reclassify containment; ordinary set_pose follows portal crossings.
+    pub fn teleport_pose(&mut self, id: u64, anchor: Vec3, rotation: Rotation) -> bool {
+        if !self.set_pose_3d(id, anchor, rotation) {
+            return false;
+        }
+        if let Some(location) = self.locations.get_mut(self.by_id[&id]) {
+            *location = crate::locate_space(&self.interiors, anchor);
+        }
+        true
+    }
     pub fn set_terrain(&mut self, terrain: crate::HeightField) {
+        std::sync::Arc::make_mut(&mut self.changes).record(
+            crate::ChangeSource::Terrain,
+            None,
+            None,
+            true,
+        );
         self.terrain = Some(std::sync::Arc::new(terrain));
+        self.navigation_revision = self.navigation_revision.wrapping_add(1);
         self.revision = self.revision.wrapping_add(1);
     }
     pub fn physics_stats(&self) -> PhysicsStats {
@@ -151,7 +240,7 @@ impl World {
             return Err("dynamic attachment requires a non-physical item".into());
         }
         let mut candidate = self.items[index].clone();
-        candidate.grounded = None;
+        candidate.character_body = None;
         candidate.physics_body = Some(body);
         candidate.collider = Some(collider);
         candidate.transform.snap();
@@ -159,10 +248,11 @@ impl World {
         if !crate::physics::apply_impulse(&mut candidate, impulse, point) {
             return Err("invalid initial impulse".into());
         }
-        let old = self.items[index].visibility_bounds();
+        let old = self.items[index].spatial_bounds();
         self.index.remove(index, old);
-        self.index.insert(index, candidate.visibility_bounds());
+        self.index.insert(index, candidate.spatial_bounds());
         self.items[index] = candidate;
+        self.record_item(index, old, true);
         self.physics_indices.push(index);
         self.physics_indices.sort_unstable();
         let diagnostics = self.physics_runtime.diagnostics.take();
@@ -173,6 +263,7 @@ impl World {
         }
         self.contacts.clear();
         self.physics_stats = PhysicsStats::default();
+        self.navigation_revision = self.navigation_revision.wrapping_add(1);
         self.revision = self.revision.wrapping_add(1);
         self.spatial_revision = self.spatial_revision.wrapping_add(1);
         Ok(())
@@ -226,6 +317,10 @@ impl World {
     pub fn spatial_revision(&self) -> u64 {
         self.spatial_revision
     }
+    /// Physical scenery changes invalidate navigation; actor movement and animation do not.
+    pub fn navigation_revision(&self) -> u64 {
+        self.navigation_revision
+    }
     pub fn item(&self, id: u64) -> Option<&Item> {
         self.by_id.get(&id).map(|&index| &self.items[index])
     }
@@ -234,7 +329,7 @@ impl World {
             return false;
         };
         let item = &mut self.items[index];
-        let old_bounds = item.visibility_bounds();
+        let old_bounds = item.spatial_bounds();
         let Some(durability) = &mut item.durability else {
             return false;
         };
@@ -243,13 +338,14 @@ impl World {
         }
         if durability.current() == 0 {
             item.apply_depletion();
-            let new_bounds = item.visibility_bounds();
+            let new_bounds = item.spatial_bounds();
             if new_bounds != old_bounds {
                 self.index.remove(index, old_bounds);
                 self.index.insert(index, new_bounds);
                 self.spatial_revision = self.spatial_revision.wrapping_add(1);
             }
         }
+        self.record_item(index, old_bounds, false);
         self.revision = self.revision.wrapping_add(1);
         true
     }
@@ -265,6 +361,8 @@ impl World {
             return false;
         }
         renderable.visual_state = state;
+        let bounds = self.items[index].spatial_bounds();
+        self.record_item(index, bounds, false);
         self.revision = self.revision.wrapping_add(1);
         true
     }
@@ -274,6 +372,42 @@ impl World {
         };
         self.set_pose_3d(item_id, anchor, rotation)
     }
+    pub fn set_character_height(&mut self, id: u64, height: f32) -> bool {
+        let Some(item) = self.item(id) else {
+            return false;
+        };
+        let Some(mut shape) = item.character_body else {
+            return false;
+        };
+        shape.height = height;
+        if item.motion.is_some()
+            || item.physics_body.is_some()
+            || !crate::character_fits(self, id, item.transform.anchor, shape)
+        {
+            return false;
+        }
+        let index = self.by_id[&id];
+        let old = self.items[index].spatial_bounds();
+        self.items[index].character_body = Some(shape);
+        self.index.remove(index, old);
+        self.index.insert(index, self.items[index].spatial_bounds());
+        self.record_item(index, old, false);
+        self.spatial_revision = self.spatial_revision.wrapping_add(1);
+        self.revision = self.revision.wrapping_add(1);
+        true
+    }
+    /// Clips are resolved by the asset adapter; this operation retains component ownership.
+    pub fn set_animation(&mut self, id: u64, animation: crate::AnimationState) -> bool {
+        let Some(&index) = self.by_id.get(&id) else {
+            return false;
+        };
+        if self.items[index].animation.is_none() {
+            return false;
+        }
+        self.items[index].animation = Some(animation);
+        self.revision = self.revision.wrapping_add(1);
+        true
+    }
     pub fn set_pose_3d(&mut self, item_id: u64, anchor: Vec3, rotation: Rotation) -> bool {
         let Some(&id) = self.by_id.get(&item_id) else {
             return false;
@@ -281,7 +415,7 @@ impl World {
         if !anchor.finite() || self.items[id].physics_body.is_some() {
             return false;
         }
-        let old = self.items[id].visibility_bounds();
+        let old = self.items[id].spatial_bounds();
         let item = &mut self.items[id];
         let previous = item.transform;
         item.transform.snap();
@@ -291,8 +425,20 @@ impl World {
             item.transform = previous;
             return false;
         }
+        if item.collider.is_some()
+            && item.character_body.is_none()
+            && (previous.anchor != anchor || previous.rotation != rotation)
+        {
+            self.navigation_revision = self.navigation_revision.wrapping_add(1);
+        }
         self.index.remove(id, old);
-        self.index.insert(id, item.visibility_bounds());
+        self.index.insert(id, item.spatial_bounds());
+        if previous.anchor != anchor || previous.rotation != rotation {
+            let occlusion =
+                self.items[id].collider.is_some() && self.items[id].character_body.is_none();
+            self.record_item(id, old, occlusion);
+        }
+        self.moved_location(id, previous.anchor, anchor);
         self.spatial_revision = self.spatial_revision.wrapping_add(1);
         self.revision = self.revision.wrapping_add(1);
         true
@@ -383,7 +529,7 @@ impl World {
             let old_bounds: Vec<_> = self
                 .physics_indices
                 .iter()
-                .map(|&i| (self.items[i].visibility_bounds(), self.items[i].transform))
+                .map(|&i| (self.items[i].spatial_bounds(), self.items[i].transform))
                 .collect();
             let result = if dt > 0.25 {
                 Err("physics ticks must not exceed 0.25 seconds".into())
@@ -402,12 +548,47 @@ impl World {
                     self.contacts = contacts;
                     let mut poses_changed = false;
                     for (&i, (old, transform)) in self.physics_indices.iter().zip(old_bounds) {
+                        if transform.anchor != self.items[i].transform.anchor
+                            || transform.rotation != self.items[i].transform.rotation
+                        {
+                            let item = &self.items[i];
+                            std::sync::Arc::make_mut(&mut self.changes).record(
+                                crate::ChangeSource::Item(item.id),
+                                Some(old),
+                                Some(item.spatial_bounds()),
+                                item.character_body.is_none() && item.collider.is_some(),
+                            );
+                        }
                         poses_changed |= transform != self.items[i].transform;
-                        let new = self.items[i].visibility_bounds();
+                        if self.items[i].character_body.is_none()
+                            && self.items[i].collider.is_some()
+                            && (transform.anchor != self.items[i].transform.anchor
+                                || transform.rotation != self.items[i].transform.rotation)
+                        {
+                            self.navigation_revision = self.navigation_revision.wrapping_add(1);
+                        }
+                        let new = self.items[i].spatial_bounds();
                         if old != new {
                             self.index.remove(i, old);
                             self.index.insert(i, new);
                             self.spatial_revision = self.spatial_revision.wrapping_add(1);
+                        }
+                        if let Some(location) = self
+                            .locations
+                            .get_mut(i)
+                            .filter(|_| transform.anchor != self.items[i].transform.anchor)
+                        {
+                            let anchor = self.items[i].transform.anchor;
+                            *location = if self.portals.is_empty() {
+                                crate::locate_space(&self.interiors, anchor)
+                            } else {
+                                crate::advance_location(
+                                    &self.portals,
+                                    *location,
+                                    transform.anchor,
+                                    anchor,
+                                )
+                            };
                         }
                     }
                     if poses_changed || stats.integrated > 0 || stats.woken > 0 {

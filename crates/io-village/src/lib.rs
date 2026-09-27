@@ -3,7 +3,7 @@
 use io_encounter::{CombatEvent, Encounter, GameCommand, GameDefinition, GameError, Phase};
 use io_game::{GamePlugin, PluginInfo, PluginWorld, Tick};
 use io_types::{Rotation, Vec3};
-use io_world::{ground_destination, line_of_sight, WorldView};
+use io_world::{line_of_sight, terrain_destination, WorldView};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -291,7 +291,7 @@ impl Village {
         let item = world.item(id).ok_or(GameError::InvalidWorld)?;
         let start = item.transform.anchor;
         let requested = start + delta;
-        let end = ground_destination(world, id, requested).map_err(|_| GameError::InvalidValue)?;
+        let end = terrain_destination(world, id, requested).map_err(|_| GameError::InvalidValue)?;
         let d = end - start;
         let yaw = if d.x * d.x + d.y * d.y > 0.00001 {
             Rotation::yaw(d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2).unwrap()
@@ -427,7 +427,8 @@ impl GamePlugin for Village {
     fn validate(&self, world: &dyn WorldView) -> Result<(), GameError> {
         for id in std::iter::once(self.player).chain(self.npcs.iter().map(|n| n.id)) {
             let item = world.item(id).ok_or(GameError::InvalidWorld)?;
-            if item.durability.is_none() || (Encounter::alive(world, id) && item.grounded.is_none())
+            if item.durability.is_none()
+                || (Encounter::alive(world, id) && item.character_body.is_none())
             {
                 return Err(GameError::InvalidWorld);
             }

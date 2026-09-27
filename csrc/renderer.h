@@ -35,4 +35,5 @@ void renderer_destroy(Renderer *renderer);
 bool renderer_resize(Renderer *renderer,int width,int height,int drawable_width,int drawable_height);
 bool renderer_draw(Renderer *renderer,const IoFrame *frame);
 bool renderer_draw_hud(Renderer *renderer);
+bool renderer_draw_guides(Renderer *renderer,const IoFrame *frame);
 #endif

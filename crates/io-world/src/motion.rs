@@ -15,8 +15,57 @@ pub struct AnimationState {
     speed: f32,
     events: Option<AnimationEvents>,
     playback: Playback,
+    root_motion: io_types::RootMotion,
+    fade: Option<AnimationFade>,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnimationFade {
+    pub clip: usize,
+    pub time: f64,
+    pub looping: bool,
+    pub root_motion: io_types::RootMotion,
+    elapsed: f32,
+    previous_elapsed: f32,
+    duration: f32,
 }
 impl AnimationState {
+    pub fn root_motion(&self) -> io_types::RootMotion {
+        self.root_motion
+    }
+    pub fn set_root_motion(&mut self, value: io_types::RootMotion) {
+        self.root_motion = value;
+    }
+    pub fn fade(&self, alpha: f32) -> Option<(&AnimationFade, f32)> {
+        let alpha = if alpha.is_finite() { alpha } else { 1. };
+        self.fade.as_ref().map(|f| {
+            (
+                f,
+                ((f.previous_elapsed + (f.elapsed - f.previous_elapsed) * alpha.clamp(0., 1.))
+                    / f.duration)
+                    .clamp(0., 1.),
+            )
+        })
+    }
+    pub fn transitioning(&self) -> bool {
+        self.fade.is_some()
+    }
+    /// Outgoing pose is held during this short local-TRS crossfade. Callers defer
+    /// further switches until completion rather than snapping an interrupted blend.
+    pub fn transition_to(&self, mut next: Self, seconds: f32) -> Result<Self, String> {
+        if self.fade.is_some() || !seconds.is_finite() || !(0.01..=2.).contains(&seconds) {
+            return Err("invalid or overlapping animation transition".into());
+        }
+        next.fade = Some(AnimationFade {
+            clip: self.clip,
+            time: self.time,
+            looping: matches!(self.playback, Playback::Loop),
+            root_motion: self.root_motion,
+            elapsed: 0.,
+            previous_elapsed: 0.,
+            duration: seconds,
+        });
+        Ok(next)
+    }
     pub fn clip(&self) -> usize {
         self.clip
     }
@@ -75,6 +124,8 @@ impl AnimationState {
             speed: 1.,
             events: None,
             playback: Playback::Loop,
+            root_motion: io_types::RootMotion::Authored,
+            fade: None,
         }
     }
 
@@ -103,6 +154,14 @@ impl AnimationState {
         if !dt.is_finite() || dt <= 0. {
             return false;
         }
+        let fading = self.fade.is_some();
+        if let Some(f) = &mut self.fade {
+            f.previous_elapsed = f.elapsed;
+            f.elapsed = (f.elapsed + dt).min(f.duration);
+            if f.previous_elapsed >= f.duration {
+                self.fade = None;
+            }
+        }
         let next = self.time + f64::from(dt) * f64::from(self.speed);
         if !next.is_finite() {
             return false;
@@ -111,13 +170,33 @@ impl AnimationState {
         if let Playback::Once { duration } = self.playback {
             self.time = self.time.min(duration);
         }
-        self.time > self.previous_time
+        fading || self.time > self.previous_time
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn crossfade_advances_a_frozen_destination_and_rejects_overlap() {
+        let mut old = AnimationState::looping(2);
+        old.seek(1e40).unwrap();
+        let mut next = AnimationState::looping(3);
+        next.set_speed(0.).unwrap();
+        let mut blended = old.transition_to(next, 0.2).unwrap();
+        assert_eq!(blended.fade(1.).unwrap().0.time, 1e40);
+        assert!(blended
+            .transition_to(AnimationState::looping(4), 0.2)
+            .is_err());
+        assert!(blended.advance(0.1));
+        assert_eq!(blended.time(), 0.);
+        assert_eq!(blended.fade(1.).unwrap().1, 0.5);
+        assert_eq!(blended.fade(f32::NAN).unwrap().1, 0.5);
+        blended.advance(0.1);
+        assert_eq!(blended.fade(1.).unwrap().1, 1.);
+        blended.advance(0.01);
+        assert!(!blended.transitioning());
+    }
     #[test]
     fn checked_animation_mutators_preserve_state_on_rejected_input() {
         let mut state = AnimationState::looping(0);

@@ -1,0 +1,10 @@
+[package]
+name = "io-traversal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+io-types = { path = "../io-types" }
+io-world = { path = "../io-world" }
+io-game = { path = "../io-game" }
+serde = { version = "1", features = ["derive"] }

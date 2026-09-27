@@ -25,6 +25,7 @@ pub struct Instance {
 pub struct Frame {
     pub instances: Vec<Instance>,
     pub grid: Vec<Vec3>,
+    pub guide_ends: [usize; 3],
     pub clip_from_world: [f32; 16],
     pub candidate_count: usize,
     pub serial: u64,
@@ -50,16 +51,23 @@ impl Frame {
         self.instances.clear();
         self.joint_matrices.clear();
         self.grid.clear();
+        self.guide_ends = [0; 3];
         self.next_lod_choices.clear();
-        self.clip_from_world = camera.clip_from_world();
-        let candidates = world.query(camera.target(), camera.render_radius());
+        let view = camera.view();
+        self.clip_from_world = view.matrix();
+        let candidates = world.query(camera.target(), view.radius);
         self.candidate_count = candidates.len();
         for id in candidates {
             let item = &world.items()[id];
             let Some(renderable) = &item.renderable else {
                 continue;
             };
-            if camera.sees(item.visibility_bounds()) {
+            if view.sees(item.visibility_bounds()) {
+                let blend = if active.binary_search(&id).is_ok() {
+                    alpha.clamp(0., 1.)
+                } else {
+                    1.
+                };
                 let appearance = library
                     .appearance(renderable.appearance_id)
                     .ok_or_else(|| format!("item {} has an unresolved appearance", item.id))?;
@@ -67,38 +75,42 @@ impl Frame {
                     .states
                     .get(renderable.visual_state.0 as usize)
                     .ok_or_else(|| format!("item {} has an unresolved visual state", item.id))?;
-                let index =
-                    if group.variants.len() == 1 && group.variants[0].min_screen_pixels == 0. {
-                        0
-                    } else {
-                        let previous = self
-                            .lod_choices
-                            .get(&item.id)
-                            .filter(|c| {
-                                c.appearance == renderable.appearance_id
-                                    && c.state == renderable.visual_state
-                            })
-                            .map(|c| c.index);
-                        let pixels = camera
-                            .projected_diameter(appearance.render_bounds, item.transform.size);
-                        let index = group.select(pixels, previous, appearance.hysteresis);
-                        self.next_lod_choices.insert(
-                            item.id,
-                            LodChoice {
-                                appearance: renderable.appearance_id,
-                                state: renderable.visual_state,
-                                index,
-                            },
-                        );
-                        index
-                    };
+                let index = if group.variants.len() == 1
+                    && group.variants[0].min_screen_pixels == 0.
+                {
+                    0
+                } else {
+                    let previous = self
+                        .lod_choices
+                        .get(&item.id)
+                        .filter(|c| {
+                            c.appearance == renderable.appearance_id
+                                && c.state == renderable.visual_state
+                        })
+                        .map(|c| c.index);
+                    let (anchor, rotation) = item.render_pose(blend);
+                    let center = appearance.render_bounds.center();
+                    let scale = item.transform.size;
+                    let center = anchor
+                        + rotation.rotate(Vec3::new(
+                            center.x * scale.x,
+                            center.y * scale.y,
+                            center.z * scale.z,
+                        ));
+                    let pixels = view.projected_diameter(appearance.render_bounds, scale, center);
+                    let index = group.select(pixels, previous, appearance.hysteresis);
+                    self.next_lod_choices.insert(
+                        item.id,
+                        LodChoice {
+                            appearance: renderable.appearance_id,
+                            state: renderable.visual_state,
+                            index,
+                        },
+                    );
+                    index
+                };
                 let Some(variant) = group.variants.get(index) else {
                     continue;
-                };
-                let blend = if active.binary_search(&id).is_ok() {
-                    alpha.clamp(0., 1.)
-                } else {
-                    1.
                 };
                 let joint_offset = u32::try_from(self.joint_matrices.len())
                     .map_err(|_| "frame joint offset overflow")?;
@@ -121,12 +133,39 @@ impl Frame {
                                 .duration(),
                         );
                         let time = animation.sample_time(blend, duration);
-                        match animation.playback() {
-                            Playback::Loop => model.palette(Some(animation.clip()), time),
-                            Playback::Once { .. } => {
-                                model.palette_clamped(Some(animation.clip()), time)
-                            }
-                        }
+                        let current = io_assets::PoseSample {
+                            clip: animation.clip(),
+                            time,
+                            looping: matches!(animation.playback(), Playback::Loop),
+                            root_motion: animation.root_motion(),
+                        };
+                        let source = animation
+                            .fade(blend)
+                            .map(|(f, weight)| {
+                                let duration = f64::from(
+                                    model
+                                        .clips()
+                                        .get(f.clip)
+                                        .ok_or("unresolved outgoing animation clip")?
+                                        .duration(),
+                                );
+                                let time = if f.looping {
+                                    f.time.rem_euclid(duration.max(f64::EPSILON))
+                                } else {
+                                    f.time.min(duration)
+                                } as f32;
+                                Ok::<_, String>((
+                                    io_assets::PoseSample {
+                                        clip: f.clip,
+                                        time,
+                                        looping: f.looping,
+                                        root_motion: f.root_motion,
+                                    },
+                                    weight,
+                                ))
+                            })
+                            .transpose()?;
+                        model.palette_blend(current, source)
                     } else {
                         model.palette(None, 0.)
                     };

@@ -19,6 +19,70 @@ make release
 ./build/release/io
 ```
 
+For the animated dungeon entrance (WASD, Space jump, hold Shift crouch):
+
+```sh
+./build/release/io --scene assets/dungeon/entry.json
+```
+
+See [Dungeon Entry](docs/dungeon.md) for controls, plugin/asset contracts and
+the current collision and guided-camera limitations.
+
+For autonomous NPC navigation through the dungeon:
+
+```sh
+./build/release/io --scene assets/dungeon/navigation.json
+```
+
+See [Character Navigation](docs/navigation.md) for shared clearance profiles,
+budgeted planning, NPC knowledge and the current level-floor scope.
+
+For a moving NPC with object-anchored attention and directional focus gauges:
+
+```sh
+./build/release/io --scene assets/dungeon/attention.json
+```
+
+See [Attention Exercise](docs/attention.md) for the observer, controls and detection settings.
+
+For an autonomous cat-and-mouse NPC in a small obstacle arena:
+
+```sh
+./build/release/io --scene assets/dungeon/cat-mouse.json
+```
+
+See [Cat and Mouse](docs/cat-mouse.md) for patrol, pursuit, last-seen search and tuning.
+
+For two independent guards with different jump capabilities, stairs, a bridge,
+changing obstacles and route diagnostics, see [Two Guards](docs/guards.md):
+
+```sh
+./build/release/io --scene assets/dungeon/guards.json
+```
+
+For a 400 x 400 metre district with 16-256 NPCs, supported ramps and moving
+obstacles, see [Traversal Stress District](docs/traversal-stress.md):
+
+```sh
+./build/release/io --scene assets/dungeon/stress-128.json
+```
+
+Developers can supply different behavior through the existing `GamePlugin` contract
+without editing movement internals. See [Movement Plugins](docs/movement-plugins.md)
+for typed requests, objective tickets, execution feedback and the external-plugin test.
+See [Bodies and Surfaces](docs/world-surfaces.md) for `CharacterBody`, scene migration,
+and the staged roadmap from fixed-floor navigation to plugin-defined 3D routes.
+
+Open the native camera-rig editor in the same SDL/OpenGL window:
+
+```sh
+./build/release/io --editor --scene assets/dungeon/entry.json
+```
+
+Select an interior, edit its rig and activation volume, preview, then use Play/Stop
+to test traversal. Changes save to scene JSON, not engine source. See
+[World Editor](docs/editor.md) for controls, persistence and current scope.
+
 For the configurable rigid-body wall-impact demo:
 
 ```sh
@@ -74,7 +138,12 @@ outside a query region. Bounds are not yet a collision/placement validator.
 
 ## Cameras and Visibility
 
-Cameras are independent orthographic views. Render distance is a world-unit
+Cameras are independent views, orthographic by default. An optional hybrid
+projection keeps the distant isometric view and smoothly introduces perspective
+as you zoom in. Try `./build/release/io --scene assets/camera/zoom.json`;
+see [Hybrid Camera](docs/camera.md) for configuration, controls and limits.
+
+Render distance is a world-unit
 radius around the camera's target, not a perspective far plane. It is
 configurable per camera through the API and clamped to 8-20,000 world units.
 Zoom changes the visible region independently of that radius.
@@ -261,6 +330,9 @@ The macOS build uses the
 | `crates/io-world` | Items, world units/subdivisions, spatial queries, retained simulation and rigid-body state | `io-types` |
 | `crates/io-assets` | Shared meshes, glTF import, versioned asset delivery contract | `io-types` |
 | `crates/io-game` | Generic plugin lifecycle, checked world access and round state machine | `io-types`, `io-world` |
+| `crates/io-traversal` | Generic route representation/search, Item bindings, RouteCoordinator and executor contracts | `io-game`, `io-types`, `io-world` |
+| `plugins/io-locomotion` | Optional upright-body movement implementation: shared motor, animation driver, surface and athletics adapters | `io-traversal`, `io-game`, `io-types`, `io-world` |
+| `crates/io-playground` | Example game composition: player input, NPC objectives, perception and selected locomotion plugin | Framework crates plus `io-locomotion` |
 | `crates/io-encounter` | Example plugin: combat, NPCs, projectiles and opportunity attacks | `io-game`, `io-types`, `io-world` |
 | `crates/io-village` | Exploration plugin: households, dialogue, schedules, companions and local encounters | `io-game`, `io-encounter`, `io-types`, `io-world` |
 | `io` (root) | App coordination, cameras, visible frame packets, plugin registration/input/HUD, C ABI | Framework crates plus chosen example plugin |
@@ -323,7 +395,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 `make test` runs every crate's tests plus the C ABI/input test. `make run` and
 `make release` still produce the same native executable; crates link into one
-Rust static library. Source and manifest changes in member crates trigger rebuilds.
+Rust static library. Source and manifest changes in member crates and plugins trigger rebuilds.
+
+Navigation is a module of `io-traversal`, not a separate crate. Core traversal
+has no humanoid feature or dependency on `io-locomotion`. The application chooses
+the supplied plugin; its player and NPC implementations share one motor and one
+animation driver. See the [contract/code map](docs/movement-plugins.md#code-map)
+and the [stairs/jump course](docs/athletics.md).
 
 `make gpu-test` needs native GUI access and uses a hidden OpenGL window. It reads
 back GPU buffer contents and checks geometric growth, smaller/empty/repopulated

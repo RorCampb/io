@@ -48,10 +48,21 @@ pub struct PluginEvent<E> {
 }
 
 impl<E> PluginWorld<'_, E> {
+    /// Immutable owned publication for deferred work. No solver or mutation access.
+    pub fn snapshot(&self) -> io_world::WorldSnapshot {
+        self.world.snapshot()
+    }
+    pub fn set_character_height(&mut self, target: u64, height: f32) -> bool {
+        self.world.set_character_height(target, height)
+    }
+    pub fn set_animation(&mut self, target: u64, state: io_world::AnimationState) -> bool {
+        self.world.set_animation(target, state)
+    }
     pub fn apply(&mut self, command: WorldCommand) -> CommandOutcome {
         self.world.apply_command(command)
     }
-    /// Explicit placement, not collision-aware locomotion. Physics-owned Items cannot teleport here.
+    /// Caller-resolved movement. Updates membership from the accepted segment;
+    /// collision checks remain the caller's responsibility.
     pub fn place(
         &mut self,
         target: u64,
@@ -98,6 +109,18 @@ impl<E> PluginWorld<'_, E> {
 }
 
 impl<E> WorldView for PluginWorld<'_, E> {
+    fn changes(&self) -> Option<&io_world::ChangeLog> {
+        Some(self.world.changes())
+    }
+    fn portals(&self) -> &[io_world::Portal] {
+        self.world.portals()
+    }
+    fn space_location(&self, id: u64) -> Option<io_world::SpaceLocation> {
+        self.world.space_location(id)
+    }
+    fn interiors(&self) -> &[io_world::Interior] {
+        self.world.interiors()
+    }
     fn terrain(&self) -> Option<&io_world::HeightField> {
         self.world.terrain()
     }
@@ -118,6 +141,9 @@ impl<E> WorldView for PluginWorld<'_, E> {
     }
     fn spatial_revision(&self) -> u64 {
         self.world.spatial_revision()
+    }
+    fn navigation_revision(&self) -> u64 {
+        self.world.navigation_revision()
     }
     fn physics_stats(&self) -> PhysicsStats {
         self.world.physics_stats()

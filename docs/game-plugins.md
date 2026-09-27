@@ -25,7 +25,8 @@ They do not make a separate character world or copy health/physics state.
 
 ## Implementing a Plugin
 
-Implement `io_game::GamePlugin` in a separate Rust crate. It defines:
+Implement `io_game::GamePlugin` in a Rust module or crate. A separate crate is
+optional, not a requirement for each behavior. It defines:
 
 - `Command`: your owned input enum, not another case in an engine enum.
 - `Event`: your owned output enum for bounded presentation/history.
@@ -113,12 +114,17 @@ plugin structs keyed by Item ID. Existing world-owned state such as durability
 and velocity should not be duplicated there. The Item component set is currently
 closed Rust structs, not an arbitrary runtime component registry.
 
+Traversal is an Item-bound extension point: compose `Movement<D>` using your own
+`RouteProvider` and `TraversalExecutor`, or opt into the existing humanoid
+implementation. See [Movement Plugins](movement-plugins.md) for the contracts,
+physics lifecycle and a non-humanoid executable example.
+
 - New models, colors, placements and existing ability parameters are data-only.
 - New game rules live in plugin code, with application input/UI wiring as needed.
 - A new general world capability or component still requires `io-world` work.
 - A new graphics capability still requires renderer work; a plugin is not a shader system.
 
-The encounter rejects living rigid-body physics ownership. Optional `Grounded`
+The encounter rejects living rigid-body physics ownership. Optional `CharacterBody`
 components now resolve movement against shared terrain and conservative obstacle
 bounds; scenes without that component retain the original direct movement.
 See [Village Exploration](villages.md) for the new exploration plugin and exact

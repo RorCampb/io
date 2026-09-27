@@ -5,6 +5,12 @@ use io_world::World;
 pub enum Game {
     Encounter(io_encounter::Game),
     Village(io_village::Game),
+    // Empty encounter view preserves the legacy combat presentation facade;
+    // This app composes the playground plugin; reusable movement stays in io-traversal.
+    Traversal {
+        session: Box<io_playground::Game>,
+        inactive: Encounter,
+    },
 }
 impl Default for Game {
     fn default() -> Self {
@@ -17,14 +23,41 @@ impl std::ops::Deref for Game {
         match self {
             Self::Encounter(g) => g,
             Self::Village(g) => g.encounter(),
+            Self::Traversal { inactive, .. } => inactive,
         }
     }
 }
 impl Game {
+    pub fn enabled(&self) -> bool {
+        self.traversal().is_some() || std::ops::Deref::deref(self).enabled()
+    }
+    pub fn traversal(&self) -> Option<&io_playground::Traversal> {
+        match self {
+            Self::Traversal { session, .. } => Some(session),
+            _ => None,
+        }
+    }
+    pub fn traversal_command(
+        &mut self,
+        world: &mut World,
+        command: io_locomotion::Command,
+    ) -> Result<(), io_traversal::Error> {
+        self.playground_command(world, command.into())
+    }
+    pub fn playground_command(
+        &mut self,
+        world: &mut World,
+        command: io_playground::Input,
+    ) -> Result<(), io_traversal::Error> {
+        match self {
+            Self::Traversal { session, .. } => session.command(world, command),
+            _ => Err(io_traversal::Error::InvalidWorld),
+        }
+    }
     pub fn village(&self) -> Option<&io_village::Village> {
         match self {
             Self::Village(g) => Some(g),
-            Self::Encounter(_) => None,
+            Self::Encounter(_) | Self::Traversal { .. } => None,
         }
     }
     pub fn command(&mut self, world: &mut World, command: GameCommand) -> Result<(), GameError> {
@@ -41,12 +74,16 @@ impl Game {
                 io_village::Command::Combat(c) => g.command(world, c),
                 _ => Err(GameError::WrongPhase),
             },
+            Self::Traversal { .. } => Err(GameError::WrongPhase),
         }
     }
     pub fn step(&mut self, world: &mut World, active: &[usize], dt: f32) -> Result<(), GameError> {
         match self {
             Self::Encounter(g) => g.step(world, active, dt),
             Self::Village(g) => g.step(world, active, dt),
+            Self::Traversal { session, .. } => session
+                .step(world, active, dt)
+                .map_err(|_| GameError::InvalidWorld),
         }
     }
 }

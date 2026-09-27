@@ -1,0 +1,11 @@
+[package]
+name = "io-locomotion"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+io-types = { path = "../../crates/io-types" }
+io-world = { path = "../../crates/io-world" }
+io-game = { path = "../../crates/io-game" }
+io-traversal = { path = "../../crates/io-traversal" }
+serde = { version = "1", features = ["derive"] }

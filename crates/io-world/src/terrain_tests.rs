@@ -1,3 +1,4 @@
+//! Terrain, character-body contracts and visibility regression tests.
 use crate::*;
 use io_types::Vec3;
 
@@ -15,7 +16,7 @@ fn height_sampling_matches_triangles_and_rejects_bad_contracts() {
 fn walker() -> Item {
     Item {
         id: 1,
-        grounded: Some(Grounded {
+        character_body: Some(CharacterBody {
             radius: 0.3,
             height: 1.8,
             max_slope: 1.,
@@ -78,10 +79,10 @@ fn walkers_follow_hills_and_cannot_tunnel_through_thin_walls() {
         .unwrap(),
     );
     world.set_pose(1, Vec3::new(0., 0., 1.), 0.);
-    let end = ground_destination(&world, 1, Vec3::new(10., 0., 0.)).unwrap();
+    let end = terrain_destination(&world, 1, Vec3::new(10., 0., 0.)).unwrap();
     assert!(end.x > 1.4 && end.x < 1.66, "{end:?}");
     assert!((end.z - (1. + end.x * 0.1)).abs() < 1e-5);
-    let slide = ground_destination(&world, 1, Vec3::new(5., 5., 0.)).unwrap();
+    let slide = terrain_destination(&world, 1, Vec3::new(5., 5., 0.)).unwrap();
     assert!(slide.y > 4.8 && slide.x < 1.66);
     let snapshot = world.snapshot();
     assert!(std::ptr::eq(
@@ -91,7 +92,7 @@ fn walkers_follow_hills_and_cannot_tunnel_through_thin_walls() {
     assert_eq!(snapshot.terrain().unwrap().height(0., 0.), Some(1.));
 }
 #[test]
-fn grounded_ownership_and_death_handoff_are_checked() {
+fn character_body_ownership_and_death_handoff_are_checked() {
     let mut actor = walker();
     actor.physics_body = Some(PhysicsBody::new(BodyKind::Dynamic));
     assert!(actor.validate().is_err());
@@ -105,6 +106,33 @@ fn grounded_ownership_and_death_handoff_are_checked() {
             Vec3::default(),
         )
         .unwrap();
-    assert!(world.item(1).unwrap().grounded.is_none());
+    assert!(world.item(1).unwrap().character_body.is_none());
     assert!(world.item(1).unwrap().physics_body.is_some());
+}
+
+#[test]
+fn character_body_is_present_in_air_and_grounded_is_only_a_support_result() {
+    let mut actor = walker();
+    actor.transform.anchor = Vec3::new(0., 0., 3.);
+    let body = actor.character_body.unwrap();
+    let floor = Item {
+        id: 2,
+        transform: Transform::new(Vec3::new(0., 0., -0.5), Vec3::new(10., 10., 1.), 0.).unwrap(),
+        collider: Some(Collider::new(ColliderShape::Box {
+            half_extents: Vec3::new(5., 5., 0.5),
+        })),
+        physics_body: Some(PhysicsBody::new(BodyKind::Static)),
+        ..Default::default()
+    };
+    let mut world = World::new(Space::new(Vec3::new(20., 20., 20.)), vec![actor, floor]);
+    let airborne =
+        sweep_character(&world, 1, Vec3::new(0., 0., 3.), Vec3::default(), body).unwrap();
+    assert!(!airborne.grounded);
+    assert_eq!(world.item(1).unwrap().character_body, Some(body));
+    assert!(world.set_pose(1, Vec3::default(), 0.));
+    let supported = sweep_character(&world, 1, Vec3::default(), Vec3::default(), body).unwrap();
+    assert!(supported.grounded);
+    let bounds = body.bounds_at(Vec3::new(1., 2., 3.));
+    assert_eq!(bounds.min, Vec3::new(0.7, 1.7, 3.));
+    assert_eq!(bounds.max, Vec3::new(1.3, 2.3, 4.8));
 }

@@ -2,9 +2,19 @@
 #define IO_H
 #include <stddef.h>
 #include <stdint.h>
+
+typedef struct IoEditorView {
+    uint32_t enabled,playing,dirty,preview,selected,count,trajectory,envelope,portal;
+    char names[8][64];float values[16];char status[160],path[256];
+} IoEditorView;
 #include <stdbool.h>
 
 typedef struct IoApp IoApp;
+bool io_app_editor_enable(IoApp *app);
+bool io_app_editor_command(IoApp *app,uint32_t kind,uint32_t index,uint32_t field,float value);
+bool io_app_editor_view(const IoApp *app,IoEditorView *out);
+enum {IO_EDIT_SELECT=1,IO_EDIT_SET,IO_EDIT_COMMIT,IO_EDIT_UNDO,IO_EDIT_REDO,
+      IO_EDIT_SAVE,IO_EDIT_PREVIEW,IO_EDIT_FRAME,IO_EDIT_PLAY,IO_EDIT_CAPTURE,IO_EDIT_DUPLICATE,IO_EDIT_TRAJECTORY,IO_EDIT_ADD_PORTAL};
 typedef uint64_t IoCameraId;
 typedef enum IoActionKind {
     IO_ACTION_ORBIT=1, IO_ACTION_ZOOM=2, IO_ACTION_RESET_VIEW=3,
@@ -38,6 +48,7 @@ typedef struct IoFrame {
     float render_distance;
     const float *joint_matrices;
     size_t joint_count;
+    size_t guide_ends[3];
 } IoFrame;
 typedef struct IoModel {
     const IoVertex *vertices;
@@ -59,6 +70,8 @@ typedef struct IoWorkerStats {
 } IoWorkerStats;
 typedef struct IoDamageText { float x,y,alpha;uint32_t amount; } IoDamageText;
 typedef struct IoProjectileView { IoVec3 position;float radius; } IoProjectileView;
+/* Read-only, screen-projected object gauges. Coordinates are logical window pixels. */
+typedef struct IoWorldMeter { float x,y,value,color[3];char label[24]; } IoWorldMeter;
 typedef struct IoGameView {
     uint64_t selected_item;
     uint32_t enabled,free_movement,line_count,damage_count;
@@ -66,15 +79,28 @@ typedef struct IoGameView {
     IoDamageText damage[16];
     uint32_t projectile_count,reserved;
     IoProjectileView projectiles[4];
+    uint32_t meter_count,meter_reserved;
+    IoWorldMeter meters[8];
 } IoGameView;
 typedef struct IoGameAction { uint32_t kind,slot; float x,y; } IoGameAction;
 /* Owned UI copy; no borrowed strings. Null clears output and returns false. */
 bool io_app_game_view(const IoApp *app,IoGameView *out);
 /* 1 start, 2 screen move(x,y), 3 select ability(slot), 4 pass, 5 target, 6 player,
    7 click target(logical x,y), 8 orbit, 9 talk, 10 recruit, 11 map toggle.
+   Traversal mode: 4 jump, 12 held crouch (slot=0/1). Other modes ignore crouch.
    Selection does not execute attacks. Exploration actions require that plugin.
    Worker mode returns queue acceptance; rules are validated on the worker. */
 bool io_app_game_action(IoApp *app,uint32_t kind,uint32_t slot,float x,float y);
+
+/* Runtime playground tuning. FOV is full width, with smooth falloff to its edge.
+   Settings read the latest publication; setters return queue acceptance in worker mode. */
+typedef struct IoAttentionSettings {
+    uint64_t observer,target;
+    float fov_degrees,notice_attention;
+    uint32_t has_pursuit;
+} IoAttentionSettings;
+bool io_app_attention_settings(const IoApp *app,uint32_t index,IoAttentionSettings *out);
+bool io_app_tune_attention(IoApp *app,uint64_t observer,uint64_t target,float fov_degrees,float notice_attention);
 
 // Handles belong to Rust. Use on one thread; free once. Null handles are accepted.
 IoApp *io_app_new(void);

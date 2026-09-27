@@ -140,8 +140,8 @@ def generate():
         x,y=rng.uniform(-480,480),rng.uniform(-480,480)
         if any(max(abs(x-cx),abs(y-cy))<125 for _,cx,cy in SETTLEMENTS):continue
         scale=rng.uniform(.65,1.2);item(f"tree-{i}","tree",x,y,scale=[scale]*3)
-    grounded={"radius":.34,"height":2.1,"max_slope":1.}
-    hero=item("hero","box",-286,-183,health=120,grounded=grounded)
+    character_body={"radius":.34,"height":2.1,"max_slope":1.}
+    hero=item("hero","box",-286,-183,health=120,character_body=character_body)
     hero.pop("asset");hero["appearance"]="adventurer/blue"
     combat={"version":1,"movement_seconds":3,"abilities":{"sword":{"range":3,"effect":{"type":"damage","amount":20}},"spark":{"range":16,"effect":{"type":"damage","amount":15},"delivery":{"type":"projectile","speed":12}},"claw":{"range":2.5,"effect":{"type":"damage","amount":4}}},"templates":{},"combatants":[{"item":"hero","template":"hero"}]}
     death={"mass":2,"knockback_impulse":3,"lift_impulse":2,"half_extents":[.34,.25,1.07],"offset":[0,0,1.07]}
@@ -169,7 +169,7 @@ def generate():
                 x,y=hx+(member%2)*2-1,cy+16-(member//2)*2
                 scale=.65 if child else 1
                 tint=[(.85,.95,.73),(.80,.85,1.),(1.,.77,.61),(.95,.91,.60)][(family+member+village)%4]
-                item(name,"villager",x,y,scale=[scale]*3,tint=tint,health=40,grounded={"radius":.26 if child else .33,"height":1.25 if child else 1.9,"max_slope":1.})
+                item(name,"villager",x,y,scale=[scale]*3,tint=tint,health=40,character_body={"radius":.26 if child else .33,"height":1.25 if child else 1.9,"max_slope":1.})
                 groups=["children"] if child else ["men" if member==0 else "women","parents"]
                 job="child" if child else "resident"
                 if (family,member) in [(0,0),(1,1)]:groups.append("shop");job="shopkeeper" if family==0 else "innkeeper"
@@ -182,13 +182,13 @@ def generate():
                     scene["items"][-1]["position"]=[wx,cy-18,height(wx,cy-18)]
                 npcs.append({"item":name,"name":names[family][member],"settlement":village,"role":"resident","family":["Holm","Reed","Vale","Moss"][family],"home":f"v{village}-house{family}","job":job,"groups":groups,"route":route,"speed":.6+idx%3*.15})
         companion=f"v{village}-companion"
-        obj=item(companion,"box",cx-2,cy-3,health=80,grounded=grounded,tint=[1.,.88,.5]);obj.pop("asset");obj["appearance"]="adventurer/blue"
+        obj=item(companion,"box",cx-2,cy-3,health=80,character_body=character_body,tint=[1.,.88,.5]);obj.pop("asset");obj["appearance"]="adventurer/blue"
         npcs.append({"item":companion,"name":["Cora","Rowan","Ivo"][village],"settlement":village,"role":"companion","family":["Bell","Thorn","Hill"][village],"home":f"v{village}-house4","job":"companion","groups":["women" if village==0 else "men"],"route":[[cx-2,cy-3],[cx+2,cy-3],[cx+2,cy-6],[cx-2,cy-6]],"speed":.4})
         combat["combatants"].append({"item":companion,"template":"companion"})
         item(f"v{village}-camp","box",cx+66,cy+9,scale=[2,2,1],tint=[.37,.20,.09])
         for k in range(3):
             name=f"v{village}-raider{k}";x,y=cx+65+k*3,cy-5+k*4
-            obj=item(name,"box",x,y,health=30,grounded=grounded);obj.pop("asset");obj["appearance"]="adventurer/red"
+            obj=item(name,"box",x,y,health=30,character_body=character_body);obj.pop("asset");obj["appearance"]="adventurer/red"
             npcs.append({"item":name,"name":f"Raider {k+1}","settlement":village,"role":"raider","family":"Road camp","home":f"v{village}-camp","job":"raider","groups":["men"],"route":[[x,y],[x+2,y]],"speed":1.})
             combat["combatants"].append({"item":name,"template":"raider"})
     scene["exploration"]={"version":1,"player":"hero","settlements":[{"name":n,"center":[x,y]} for n,x,y in SETTLEMENTS],"npcs":npcs,"dialogues":dialogue,"combat":combat}

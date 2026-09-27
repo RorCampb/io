@@ -1,4 +1,5 @@
 use super::{Body, ColliderShape};
+use crate::geometry::OrientedBox as BoxShape;
 use io_types::Vec3;
 
 pub(super) struct Contact {
@@ -6,27 +7,9 @@ pub(super) struct Contact {
     pub normal: Vec3,
     pub depth: f32,
 }
-struct BoxShape {
-    center: Vec3,
-    axes: [Vec3; 3],
-    half: [f32; 3],
-}
 impl BoxShape {
-    fn new(body: &Body, h: Vec3) -> Self {
-        Self {
-            center: body.center,
-            axes: [
-                body.rotation.rotate(Vec3::new(1., 0., 0.)),
-                body.rotation.rotate(Vec3::new(0., 1., 0.)),
-                body.rotation.rotate(Vec3::new(0., 0., 1.)),
-            ],
-            half: [h.x, h.y, h.z],
-        }
-    }
-    fn radius(&self, n: Vec3) -> f32 {
-        (0..3)
-            .map(|i| self.half[i] * self.axes[i].dot(n).abs())
-            .sum()
+    fn from_body(body: &Body, h: Vec3) -> Self {
+        Self::new(body.center, body.rotation, h)
     }
     fn edge(&self, axis: usize, direction: Vec3) -> (Vec3, Vec3) {
         let mut center = self.center;
@@ -68,17 +51,17 @@ pub(super) fn contacts(a: &Body, b: &Body) -> Vec<Contact> {
             }]
         }
         (ColliderShape::Sphere { radius }, ColliderShape::Box { half_extents }) => {
-            sphere_box(a.center, radius, &BoxShape::new(b, half_extents))
+            sphere_box(a.center, radius, &BoxShape::from_body(b, half_extents))
         }
         (ColliderShape::Box { half_extents }, ColliderShape::Sphere { radius }) => {
-            let mut result = sphere_box(b.center, radius, &BoxShape::new(a, half_extents));
+            let mut result = sphere_box(b.center, radius, &BoxShape::from_body(a, half_extents));
             for c in &mut result {
                 c.normal = c.normal.scaled(-1.);
             }
             result
         }
         (ColliderShape::Box { half_extents: ha }, ColliderShape::Box { half_extents: hb }) => {
-            box_box(&BoxShape::new(a, ha), &BoxShape::new(b, hb))
+            box_box(&BoxShape::from_body(a, ha), &BoxShape::from_body(b, hb))
         }
     }
 }

@@ -1,0 +1,1120 @@
+{
+  "version": 1,
+  "origin": [
+    0,
+    0,
+    0
+  ],
+  "dimensions": [
+    40,
+    20,
+    20
+  ],
+  "simulation": {
+    "tick_hz": 60
+  },
+  "camera": {
+    "target": [
+      14,
+      5,
+      1
+    ],
+    "zoom": 1.5,
+    "render_distance": 100
+  },
+  "assets": [
+    {
+      "name": "stone",
+      "builtin": "box"
+    }
+  ],
+  "packages": [
+    {
+      "namespace": "mixamo",
+      "file": "../action-adventure/package.json"
+    }
+  ],
+  "items": [
+    {
+      "name": "west",
+      "asset": "stone",
+      "position": [
+        0,
+        0,
+        -0.5
+      ],
+      "scale": [
+        4,
+        6,
+        0.5
+      ],
+      "tint": [
+        0.45,
+        0.65,
+        0.66
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            2.0,
+            3.0,
+            0.25
+          ]
+        },
+        "offset": [
+          2.0,
+          3.0,
+          0.25
+        ]
+      }
+    },
+    {
+      "name": "up-0",
+      "asset": "stone",
+      "position": [
+        4,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        0.75
+      ],
+      "tint": [
+        0.5,
+        0.7,
+        0.75
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.375
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.375
+        ]
+      }
+    },
+    {
+      "name": "up-1",
+      "asset": "stone",
+      "position": [
+        5,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        1.0
+      ],
+      "tint": [
+        0.56,
+        0.7,
+        0.75
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.5
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "name": "up-2",
+      "asset": "stone",
+      "position": [
+        6,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        1.25
+      ],
+      "tint": [
+        0.62,
+        0.7,
+        0.75
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.625
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.625
+        ]
+      }
+    },
+    {
+      "name": "up-3",
+      "asset": "stone",
+      "position": [
+        7,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        1.5
+      ],
+      "tint": [
+        0.6799999999999999,
+        0.7,
+        0.75
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.75
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.75
+        ]
+      }
+    },
+    {
+      "name": "takeoff",
+      "asset": "stone",
+      "position": [
+        8,
+        0,
+        -0.5
+      ],
+      "scale": [
+        4,
+        6,
+        1.5
+      ],
+      "tint": [
+        0.6,
+        0.78,
+        0.8
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            2.0,
+            3.0,
+            0.75
+          ]
+        },
+        "offset": [
+          2.0,
+          3.0,
+          0.75
+        ]
+      }
+    },
+    {
+      "name": "landing",
+      "asset": "stone",
+      "position": [
+        13,
+        0,
+        -0.5
+      ],
+      "scale": [
+        4,
+        6,
+        1.5
+      ],
+      "tint": [
+        0.65,
+        0.78,
+        0.55
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            2.0,
+            3.0,
+            0.75
+          ]
+        },
+        "offset": [
+          2.0,
+          3.0,
+          0.75
+        ]
+      }
+    },
+    {
+      "name": "down-0",
+      "asset": "stone",
+      "position": [
+        17,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        1.25
+      ],
+      "tint": [
+        0.7,
+        0.78,
+        0.5
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.625
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.625
+        ]
+      }
+    },
+    {
+      "name": "down-1",
+      "asset": "stone",
+      "position": [
+        18,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        1.0
+      ],
+      "tint": [
+        0.7,
+        0.72,
+        0.5
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.5
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "name": "down-2",
+      "asset": "stone",
+      "position": [
+        19,
+        0,
+        -0.5
+      ],
+      "scale": [
+        1,
+        6,
+        0.75
+      ],
+      "tint": [
+        0.7,
+        0.66,
+        0.5
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            3.0,
+            0.375
+          ]
+        },
+        "offset": [
+          0.5,
+          3.0,
+          0.375
+        ]
+      }
+    },
+    {
+      "name": "east",
+      "asset": "stone",
+      "position": [
+        20,
+        0,
+        -0.5
+      ],
+      "scale": [
+        8,
+        6,
+        0.5
+      ],
+      "tint": [
+        0.68,
+        0.68,
+        0.45
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            4.0,
+            3.0,
+            0.25
+          ]
+        },
+        "offset": [
+          4.0,
+          3.0,
+          0.25
+        ]
+      }
+    },
+    {
+      "name": "deck-obstacle",
+      "asset": "stone",
+      "position": [
+        9,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        3,
+        3
+      ],
+      "tint": [
+        0.7,
+        0.35,
+        0.25
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            1.5,
+            1.5
+          ]
+        },
+        "offset": [
+          0.5,
+          1.5,
+          1.5
+        ]
+      }
+    },
+    {
+      "name": "pit",
+      "asset": "stone",
+      "position": [
+        0,
+        0,
+        -5
+      ],
+      "scale": [
+        28,
+        6,
+        0.3
+      ],
+      "tint": [
+        0.2,
+        0.25,
+        0.3
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            14.0,
+            3.0,
+            0.15
+          ]
+        },
+        "offset": [
+          14.0,
+          3.0,
+          0.15
+        ]
+      }
+    },
+    {
+      "name": "hero",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        25,
+        2,
+        0
+      ],
+      "character_body": {
+        "radius": 0.35,
+        "height": 1.9,
+        "max_slope": 0.8
+      },
+      "animation": {
+        "clip": "idle",
+        "speed": 1
+      }
+    },
+    {
+      "name": "west-bridge-approach",
+      "asset": "stone",
+      "position": [
+        8,
+        6,
+        -0.5
+      ],
+      "scale": [
+        4,
+        4,
+        1.5
+      ],
+      "tint": [
+        0.55,
+        0.7,
+        0.4
+      ],
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            2.0,
+            2.0,
+            0.75
+          ]
+        },
+        "offset": [
+          2.0,
+          2.0,
+          0.75
+        ]
+      },
+      "physics_body": {
+        "type": "static"
+      }
+    },
+    {
+      "name": "east-bridge-approach",
+      "asset": "stone",
+      "position": [
+        13,
+        6,
+        -0.5
+      ],
+      "scale": [
+        4,
+        4,
+        1.5
+      ],
+      "tint": [
+        0.55,
+        0.7,
+        0.4
+      ],
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            2.0,
+            2.0,
+            0.75
+          ]
+        },
+        "offset": [
+          2.0,
+          2.0,
+          0.75
+        ]
+      },
+      "physics_body": {
+        "type": "static"
+      }
+    },
+    {
+      "name": "bridge",
+      "asset": "stone",
+      "position": [
+        12,
+        8,
+        -0.5
+      ],
+      "scale": [
+        1,
+        2,
+        1.5
+      ],
+      "tint": [
+        0.8,
+        0.7,
+        0.4
+      ],
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            1.0,
+            0.75
+          ]
+        },
+        "offset": [
+          0.5,
+          1.0,
+          0.75
+        ]
+      },
+      "physics_body": {
+        "type": "static"
+      }
+    },
+    {
+      "name": "hide-wall",
+      "asset": "stone",
+      "position": [
+        24,
+        0.5,
+        0
+      ],
+      "scale": [
+        0.5,
+        3,
+        3
+      ],
+      "tint": [
+        0.55,
+        0.6,
+        0.7
+      ],
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.25,
+            1.5,
+            1.5
+          ]
+        },
+        "offset": [
+          0.25,
+          1.5,
+          1.5
+        ]
+      },
+      "physics_body": {
+        "type": "static"
+      }
+    },
+    {
+      "name": "hide-wall-east",
+      "asset": "stone",
+      "position": [
+        26,
+        3.5,
+        0
+      ],
+      "scale": [
+        1.5,
+        0.5,
+        3
+      ],
+      "tint": [
+        0.55,
+        0.6,
+        0.7
+      ],
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.75,
+            0.25,
+            1.5
+          ]
+        },
+        "offset": [
+          0.75,
+          0.25,
+          1.5
+        ]
+      },
+      "physics_body": {
+        "type": "static"
+      }
+    },
+    {
+      "name": "shutter",
+      "asset": "stone",
+      "position": [
+        12,
+        8,
+        5
+      ],
+      "scale": [
+        1,
+        2,
+        2.5
+      ],
+      "tint": [
+        1,
+        0.4,
+        0.15
+      ],
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.5,
+            1.0,
+            1.25
+          ]
+        },
+        "offset": [
+          0.5,
+          1.0,
+          1.25
+        ]
+      },
+      "physics_body": {
+        "type": "kinematic"
+      }
+    },
+    {
+      "name": "jumper",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        2,
+        2,
+        0
+      ],
+      "character_body": {
+        "radius": 0.35,
+        "height": 1.9,
+        "max_slope": 0.8
+      },
+      "animation": {
+        "clip": "idle",
+        "speed": 1
+      },
+      "tint": [
+        0.3,
+        0.8,
+        1
+      ]
+    },
+    {
+      "name": "walker",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        2,
+        4.5,
+        0
+      ],
+      "character_body": {
+        "radius": 0.35,
+        "height": 1.9,
+        "max_slope": 0.8
+      },
+      "animation": {
+        "clip": "idle",
+        "speed": 1
+      },
+      "tint": [
+        1,
+        0.65,
+        0.25
+      ]
+    }
+  ],
+  "traversal": {
+    "player": "hero",
+    "walk_speed": 3.2,
+    "crouch_speed": 0.95,
+    "jump_speed": 5.0,
+    "gravity": 9.81,
+    "standing_height": 1.9,
+    "crouch_height": 1.15,
+    "turn_speed": 8,
+    "blend_seconds": 0.12,
+    "clips": {
+      "idle": {
+        "clip": "idle",
+        "speed": 1,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "walk": {
+        "clip": "running_in_place",
+        "speed": 0.85,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "crouch_idle": {
+        "clip": "crouched_sneaking_left",
+        "speed": 0,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "crouch_walk": {
+        "clip": "crouched_sneaking_left",
+        "speed": 0.9,
+        "looping": true,
+        "fixed_root_height": false
+      },
+      "jump": {
+        "clip": "jumping_up",
+        "speed": 1,
+        "looping": false,
+        "fixed_root_height": true
+      },
+      "fall": {
+        "clip": "falling_idle",
+        "speed": 1,
+        "looping": true,
+        "fixed_root_height": true
+      },
+      "land": {
+        "clip": "hard_landing",
+        "speed": 1,
+        "looping": false,
+        "fixed_root_height": false
+      }
+    },
+    "navigation": {
+      "planning": "background",
+      "domain": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "size": [
+          28,
+          10
+        ],
+        "cell_size": 0.5
+      },
+      "athletics": {
+        "step_height": 0.3,
+        "jump_distance": 3,
+        "max_drop": 0.6
+      },
+      "expansions_per_tick": 16,
+      "agents": [
+        {
+          "item": "jumper",
+          "goal": [
+            26,
+            2,
+            0
+          ],
+          "locomotion": {
+            "walk_speed": 3.2,
+            "crouch_speed": 0.95,
+            "jump_speed": 5,
+            "gravity": 9.81,
+            "standing_height": 1.9,
+            "crouch_height": 1.15,
+            "turn_speed": 8,
+            "blend_seconds": 0.12,
+            "clips": {
+              "idle": {
+                "clip": "idle",
+                "speed": 1,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "walk": {
+                "clip": "running_in_place",
+                "speed": 0.9,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "crouch_idle": {
+                "clip": "crouched_sneaking_left",
+                "speed": 0,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "crouch_walk": {
+                "clip": "crouched_sneaking_left",
+                "speed": 0.9,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "jump": {
+                "clip": "jumping_up",
+                "speed": 1,
+                "looping": false,
+                "fixed_root_height": true
+              },
+              "fall": {
+                "clip": "falling_idle",
+                "speed": 1,
+                "looping": true,
+                "fixed_root_height": true
+              },
+              "land": {
+                "clip": "hard_landing",
+                "speed": 1,
+                "looping": false,
+                "fixed_root_height": false
+              }
+            }
+          },
+          "on_arrival": {
+            "type": "patrol",
+            "points": [
+              [
+                2,
+                2,
+                0
+              ],
+              [
+                26,
+                2,
+                0
+              ]
+            ]
+          },
+          "steering": {
+            "look_ahead": 3,
+            "acceleration": 9,
+            "braking": 14,
+            "arrival_response": 0.25
+          },
+          "pursuit": {
+            "target": "hero",
+            "settings": {
+              "notice_attention": 0.18,
+              "minimum_focus": 0.03,
+              "lost_sight_seconds": 0.75,
+              "search_seconds": 15,
+              "search_radius": 1,
+              "repath_seconds": 0.5,
+              "tag_distance": 1.25,
+              "grace_seconds": 3
+            }
+          },
+          "can_crouch": false,
+          "athletics": {
+            "step_height": 0.3,
+            "jump_distance": 3,
+            "max_drop": 0.6
+          }
+        },
+        {
+          "item": "walker",
+          "goal": [
+            26,
+            4.5,
+            0
+          ],
+          "locomotion": {
+            "walk_speed": 3.2,
+            "crouch_speed": 0.95,
+            "jump_speed": 5,
+            "gravity": 9.81,
+            "standing_height": 1.9,
+            "crouch_height": 1.15,
+            "turn_speed": 8,
+            "blend_seconds": 0.12,
+            "clips": {
+              "idle": {
+                "clip": "idle",
+                "speed": 1,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "walk": {
+                "clip": "running_in_place",
+                "speed": 0.9,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "crouch_idle": {
+                "clip": "crouched_sneaking_left",
+                "speed": 0,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "crouch_walk": {
+                "clip": "crouched_sneaking_left",
+                "speed": 0.9,
+                "looping": true,
+                "fixed_root_height": false
+              },
+              "jump": {
+                "clip": "jumping_up",
+                "speed": 1,
+                "looping": false,
+                "fixed_root_height": true
+              },
+              "fall": {
+                "clip": "falling_idle",
+                "speed": 1,
+                "looping": true,
+                "fixed_root_height": true
+              },
+              "land": {
+                "clip": "hard_landing",
+                "speed": 1,
+                "looping": false,
+                "fixed_root_height": false
+              }
+            }
+          },
+          "on_arrival": {
+            "type": "patrol",
+            "points": [
+              [
+                2,
+                4.5,
+                0
+              ],
+              [
+                26,
+                4.5,
+                0
+              ]
+            ]
+          },
+          "steering": {
+            "look_ahead": 3,
+            "acceleration": 9,
+            "braking": 14,
+            "arrival_response": 0.25
+          },
+          "pursuit": {
+            "target": "hero",
+            "settings": {
+              "notice_attention": 0.18,
+              "minimum_focus": 0.03,
+              "lost_sight_seconds": 0.75,
+              "search_seconds": 15,
+              "search_radius": 1,
+              "repath_seconds": 0.5,
+              "tag_distance": 1.25,
+              "grace_seconds": 3
+            }
+          },
+          "can_crouch": false,
+          "athletics": {
+            "step_height": 0.3,
+            "jump_distance": 0,
+            "max_drop": 0.6
+          }
+        }
+      ]
+    },
+    "observations": [
+      {
+        "observer": "jumper",
+        "target": "hero",
+        "vision": {
+          "range": 14,
+          "fov_degrees": 240,
+          "gain_per_second": 2.4,
+          "decay_per_second": 0.35
+        }
+      },
+      {
+        "observer": "walker",
+        "target": "hero",
+        "vision": {
+          "range": 14,
+          "fov_degrees": 240,
+          "gain_per_second": 2.4,
+          "decay_per_second": 0.35
+        }
+      }
+    ],
+    "debug_routes": true,
+    "barrier_cycle": {
+      "item": "shutter",
+      "alternate": [
+        12,
+        8,
+        1
+      ],
+      "interval_seconds": 12
+    }
+  }
+}

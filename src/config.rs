@@ -1,11 +1,17 @@
 #![forbid(unsafe_code)]
 pub use io_assets::contract::{AppearanceConfig, AssetConfig, LodConfig, PackageImport};
+pub use io_scene::InteriorDefinition as InteriorConfig;
 use serde::Deserialize;
 use std::path::Path;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SceneConfig {
+    #[serde(default)]
+    pub interiors: Vec<InteriorConfig>,
+    #[serde(default)]
+    pub portals: Vec<io_scene::PortalDefinition>,
+    pub traversal: Option<io_playground::Definition>,
     pub exploration: Option<io_village::Definition>,
     pub terrain: Option<TerrainConfig>,
     pub game: Option<io_encounter::GameDefinition>,
@@ -28,6 +34,11 @@ pub struct SceneConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CameraConfig {
+    pub rigs: Option<io_scene::CameraRigs>,
+    pub orbit: Option<crate::camera_boom::OrbitCamera>,
+    pub interior: Option<crate::camera::InteriorCamera>,
+    #[serde(default)]
+    pub projection: crate::camera::Projection,
     #[serde(default)]
     pub coverage: crate::camera::RenderCoverage,
     pub target: [f32; 3],
@@ -42,7 +53,9 @@ fn default_render_distance() -> f32 {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ItemConfig {
-    pub grounded: Option<GroundedConfig>,
+    // Load older scenes, but keep one canonical component name in code and new assets.
+    #[serde(alias = "grounded")]
+    pub character_body: Option<CharacterBodyConfig>,
     pub physics_body: Option<crate::physics_config::BodyConfig>,
     pub collider: Option<crate::physics_config::ColliderConfig>,
     pub rotation_xyzw: Option<[f32; 4]>,
@@ -119,8 +132,55 @@ impl SceneConfig {
         Ok(scene)
     }
     pub fn validate(&self) -> Result<(), String> {
-        if self.game.is_some() && self.exploration.is_some() {
-            return Err("choose game or exploration plugin".into());
+        if let Some(rigs) = &self.camera.rigs {
+            rigs.validate(
+                &self
+                    .interiors
+                    .iter()
+                    .map(|v| v.name.clone())
+                    .collect::<Vec<_>>(),
+            )?;
+            if self.camera.interior.is_some() {
+                return Err("Authored rigs cannot be combined with interior guidance".into());
+            }
+        }
+        if let Some(orbit) = self.camera.orbit {
+            if !orbit.valid()
+                || matches!(
+                    self.camera.projection,
+                    crate::camera::Projection::Orthographic {}
+                )
+            {
+                return Err(
+                    "orbit camera needs valid distance limits and a perspective lens".into(),
+                );
+            }
+        }
+        io_scene::resolve_layout(&self.interiors, &self.portals, self.origin)?;
+        if self.camera.interior.is_some_and(|v| !v.valid()) {
+            return Err("invalid interior camera".into());
+        }
+        if let Some(interior) = self.camera.interior {
+            match self.camera.projection {
+                crate::camera::Projection::ZoomPerspective { end_zoom, .. }
+                    if interior.zoom >= end_zoom => {}
+                _ => return Err("interior camera needs full perspective at its guided zoom".into()),
+            }
+        }
+        if [
+            self.game.is_some(),
+            self.exploration.is_some(),
+            self.traversal.is_some(),
+        ]
+        .into_iter()
+        .filter(|v| *v)
+        .count()
+            > 1
+        {
+            return Err("choose one game, exploration or traversal plugin".into());
+        }
+        if let Some(traversal) = &self.traversal {
+            traversal.validate()?;
         }
         if let Some(exploration) = &self.exploration {
             exploration.validate()?;
@@ -153,6 +213,7 @@ impl SceneConfig {
             || !self.camera.render_distance.is_finite()
             || !(8.0..=20000.0).contains(&self.camera.render_distance)
             || !self.camera.coverage.valid()
+            || !self.camera.projection.valid()
         {
             return Err("invalid world or camera dimensions".into());
         }
@@ -182,19 +243,48 @@ impl TerrainConfig {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GroundedConfig {
+pub struct CharacterBodyConfig {
     pub radius: f32,
     pub height: f32,
     pub max_slope: f32,
 }
-impl GroundedConfig {
-    pub fn resolve(&self) -> Result<io_world::Grounded, String> {
-        let m = io_world::Grounded {
+impl CharacterBodyConfig {
+    pub fn resolve(&self) -> Result<io_world::CharacterBody, String> {
+        let m = io_world::CharacterBody {
             radius: self.radius,
             height: self.height,
             max_slope: self.max_slope,
         };
         m.validate()?;
         Ok(m)
+    }
+}
+
+#[cfg(test)]
+mod character_body_tests {
+    use super::*;
+    const ITEM: &str = r#"{"name":"hero","position":[0,0,0],"character_body":{"radius":0.35,"height":1.9,"max_slope":0.8}}"#;
+    #[test]
+    fn canonical_and_legacy_names_resolve_the_same_body() {
+        let canonical: ItemConfig = serde_json::from_str(ITEM).unwrap();
+        let legacy: ItemConfig =
+            serde_json::from_str(&ITEM.replace("character_body", "grounded")).unwrap();
+        assert_eq!(
+            canonical.character_body.unwrap().resolve().unwrap(),
+            legacy.character_body.unwrap().resolve().unwrap()
+        );
+    }
+    #[test]
+    fn aliases_cannot_override_each_other_and_body_contract_is_checked() {
+        let duplicate = ITEM.replace(
+            "\"character_body\":",
+            "\"grounded\":null,\"character_body\":",
+        );
+        assert!(serde_json::from_str::<ItemConfig>(&duplicate).is_err());
+        assert!(
+            serde_json::from_str::<ItemConfig>(&ITEM.replace("radius", "is_grounded")).is_err()
+        );
+        let invalid: ItemConfig = serde_json::from_str(&ITEM.replace("0.35", "-0.35")).unwrap();
+        assert!(invalid.character_body.unwrap().resolve().is_err());
     }
 }

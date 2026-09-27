@@ -8,7 +8,8 @@ use io_types::{Bounds, Rotation, Vec3};
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Item {
     pub id: u64,
-    pub grounded: Option<crate::Grounded>,
+    /// Upright body geometry and traversal limits, present even while airborne.
+    pub character_body: Option<crate::CharacterBody>,
     pub transform: Transform,
     pub occupancy: Occupancy,
     pub renderable: Option<Renderable>,
@@ -26,10 +27,10 @@ impl Item {
             return Err("item ID must be nonzero".into());
         }
         self.transform.validate()?;
-        if let Some(motor) = self.grounded {
+        if let Some(motor) = self.character_body {
             motor.validate()?;
             if self.physics_body.is_some() || self.motion.is_some() {
-                return Err("grounded movement needs exclusive pose ownership".into());
+                return Err("character body movement needs exclusive pose ownership".into());
             }
         }
         match (&self.physics_body, &self.collider) {
@@ -101,7 +102,9 @@ impl Item {
         }
     }
     pub fn render_pose(&self, alpha: f32) -> (Vec3, Rotation) {
-        if (self.motion.is_none() && self.physics_body.is_none()) || self.simulated_ticks == 0 {
+        if (self.motion.is_none() && self.physics_body.is_none() && self.character_body.is_none())
+            || self.simulated_ticks == 0
+        {
             (self.transform.anchor, self.transform.rotation)
         } else {
             self.transform.pose(alpha)
@@ -109,7 +112,9 @@ impl Item {
     }
     pub fn interpolates_pose(&self) -> bool {
         self.simulated_ticks != 0
-            && (self.motion.is_some() || self.physics_body.is_some())
+            && (self.motion.is_some()
+                || self.physics_body.is_some()
+                || self.character_body.is_some())
             && (self.transform.anchor != self.transform.previous_anchor
                 || self.transform.rotation != self.transform.previous_rotation)
     }
@@ -123,6 +128,38 @@ impl Item {
     pub fn bounds(&self) -> Bounds {
         self.transform.bounds(self.occupancy.local_bounds)
     }
+    /// Queries must include physical extents even when a mesh is absent or smaller.
+    pub fn spatial_bounds(&self) -> Bounds {
+        self.with_physical_bounds(self.visibility_bounds())
+    }
+    /// Current geometry only; unlike spatial_bounds, excludes interpolation history.
+    pub fn current_spatial_bounds(&self) -> Bounds {
+        let local = self
+            .renderable
+            .as_ref()
+            .map_or(self.occupancy.local_bounds, |r| {
+                r.local_bounds.union(self.occupancy.local_bounds)
+            });
+        self.with_physical_bounds(self.transform.bounds(local))
+    }
+    fn with_physical_bounds(&self, mut bounds: Bounds) -> Bounds {
+        if let Some(c) = self.collider {
+            let h = match c.shape {
+                crate::ColliderShape::Box { half_extents } => half_extents,
+                crate::ColliderShape::Sphere { radius } => Vec3::new(radius, radius, radius),
+            };
+            let mut transform = self.transform;
+            transform.size = Vec3::new(1., 1., 1.);
+            bounds = bounds.union(transform.bounds(Bounds {
+                min: c.offset - h,
+                max: c.offset + h,
+            }));
+        }
+        if let Some(g) = self.character_body {
+            bounds = bounds.union(g.bounds_at(self.transform.anchor));
+        }
+        bounds
+    }
     pub fn visibility_bounds(&self) -> Bounds {
         // Include occupancy even when visuals are smaller or absent.
         let b = self
@@ -131,7 +168,7 @@ impl Item {
             .map_or(self.occupancy.local_bounds, |r| {
                 r.local_bounds.union(self.occupancy.local_bounds)
             });
-        if self.motion.is_none() && self.physics_body.is_none() {
+        if self.motion.is_none() && self.physics_body.is_none() && self.character_body.is_none() {
             return self.transform.bounds(b);
         }
         let t = &self.transform;

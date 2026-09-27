@@ -11,7 +11,50 @@ static IoAction key_action(SDL_Keycode key){
     SDL_Event event={0};event.type=SDL_KEYDOWN;event.key.keysym.sym=key;
     IoAction action;assert(input_translate(&event,&action)==INPUT_ACTION);return action;
 }
+static void finger(InputTrackpad *pad,Uint32 type,SDL_FingerID id,float x,float y){
+    SDL_Event e={.type=type};e.tfinger.touchId=42;e.tfinger.fingerId=id;e.tfinger.x=x;e.tfinger.y=y;
+    assert(input_trackpad_event(pad,&e));
+}
+static void check_trackpad(void){
+    InputTrackpad pad={0};IoAction actions[2];
+    finger(&pad,SDL_FINGERDOWN,1,0.3f,0.5f);
+    assert(input_trackpad_actions(&pad,actions)==0);
+    finger(&pad,SDL_FINGERDOWN,2,0.7f,0.5f);
+    assert(input_trackpad_actions(&pad,actions)==0);
+    finger(&pad,SDL_FINGERMOTION,1,0.4f,0.4f);
+    finger(&pad,SDL_FINGERMOTION,2,0.8f,0.4f);
+    assert(input_trackpad_actions(&pad,actions)==1 && actions[0].kind==IO_ACTION_ORBIT);
+    assert(fabsf(actions[0].x+0.6283185f)<1e-5f && fabsf(actions[0].y-0.3141593f)<1e-5f);
+    assert(input_trackpad_actions(&pad,actions)==0);
+    /* Finger spacing jitter during an orbit must never dolly the camera. */
+    finger(&pad,SDL_FINGERMOTION,1,0.41f,0.4f);
+    finger(&pad,SDL_FINGERMOTION,2,0.82f,0.4f);
+    assert(input_trackpad_actions(&pad,actions)==1 && actions[0].kind==IO_ACTION_ORBIT);
+    finger(&pad,SDL_FINGERUP,1,0.41f,0.4f);
+    finger(&pad,SDL_FINGERUP,2,0.82f,0.4f);
+    finger(&pad,SDL_FINGERDOWN,1,0.4f,0.4f);
+    finger(&pad,SDL_FINGERDOWN,2,0.8f,0.4f);
+    finger(&pad,SDL_FINGERMOTION,1,0.3f,0.4f);
+    finger(&pad,SDL_FINGERMOTION,2,0.9f,0.4f);
+    assert(input_trackpad_actions(&pad,actions)==1 && actions[0].kind==IO_ACTION_ZOOM);
+    assert(fabsf(actions[0].x-logf(1.5f)/0.12f)<1e-5f);
+    finger(&pad,SDL_FINGERDOWN,3,0.5f,0.4f);
+    finger(&pad,SDL_FINGERMOTION,1,0.2f,0.5f);
+    assert(input_trackpad_actions(&pad,actions)==0);
+    finger(&pad,SDL_FINGERUP,3,0.5f,0.4f);
+    assert(input_trackpad_actions(&pad,actions)==0);
+    SDL_Event lost={.type=SDL_WINDOWEVENT};lost.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+    assert(!input_trackpad_event(&pad,&lost));assert(!pad.active);
+    finger(&pad,SDL_FINGERMOTION,1,0.1f,0.5f);
+    assert(input_trackpad_actions(&pad,actions)==0);
+    SDL_Event wheel={.type=SDL_MOUSEWHEEL};wheel.wheel.preciseY=0.25f;
+    assert(input_translate(&wheel,&actions[0])==INPUT_ACTION && actions[0].kind==IO_ACTION_ZOOM && actions[0].x==0.25f);
+    wheel.wheel.direction=SDL_MOUSEWHEEL_FLIPPED;
+    assert(input_translate(&wheel,&actions[0])==INPUT_ACTION && actions[0].x==-0.25f);
+    puts("PASS: two-finger orbit, coalesced pinch, extra fingers, focus reset and mouse wheel");
+}
 int main(void){
+    check_trackpad();
     IoApp *app=io_app_new();assert(app);
     assert(io_app_tick_hz(NULL)==0);
     const char *configured_hz=getenv("IO_TICK_HZ");

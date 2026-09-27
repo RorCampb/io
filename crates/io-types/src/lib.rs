@@ -2,6 +2,14 @@
 //! Shared geometry types. This crate has no world, asset, or renderer dependencies.
 
 use std::ops::{Add, Sub};
+/// Root displacement policy for controller-driven versus authored animation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RootMotion {
+    #[default]
+    Authored,
+    InPlace,
+    InPlaceFixedHeight,
+}
 mod message;
 pub use message::{Envelope, MessageId};
 

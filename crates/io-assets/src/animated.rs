@@ -21,6 +21,13 @@ struct Node {
     rotation: Quat,
     scale: Vec3,
 }
+#[derive(Clone, Copy)]
+pub struct PoseSample {
+    pub clip: usize,
+    pub time: f32,
+    pub looping: bool,
+    pub root_motion: io_types::RootMotion,
+}
 enum Values {
     Translation(Vec<Vec3>),
     Rotation(Vec<Quat>),
@@ -238,6 +245,9 @@ impl Model {
     }
 
     fn globals_sample(&self, clip: Option<usize>, time: f32, looping: bool) -> Vec<Mat4> {
+        self.node_globals(&self.locals_sample(clip, time, looping))
+    }
+    fn locals_sample(&self, clip: Option<usize>, time: f32, looping: bool) -> Vec<Node> {
         let mut nodes = self.nodes.clone();
         if let Some(clip) = clip.and_then(|id| self.clips.get(id)) {
             let t = clip.start
@@ -270,6 +280,9 @@ impl Model {
                 }
             }
         }
+        nodes
+    }
+    fn node_globals(&self, nodes: &[Node]) -> Vec<Mat4> {
         let mut globals = vec![Mat4::IDENTITY; nodes.len()];
         for &i in &self.order {
             let n = &nodes[i];
@@ -277,6 +290,62 @@ impl Model {
             globals[i] = n.parent.map_or(local, |parent| globals[parent] * local);
         }
         globals
+    }
+    fn controlled_locals(&self, sample: PoseSample) -> Vec<Node> {
+        let mut nodes = self.locals_sample(Some(sample.clip), sample.time, sample.looping);
+        if sample.root_motion == io_types::RootMotion::Authored {
+            return nodes;
+        }
+        let globals = self.node_globals(&nodes);
+        let initial = self.globals_sample(Some(sample.clip), 0., false);
+        for joint in &self.joints {
+            let mut parent = self.nodes[joint.node].parent;
+            let mut root = true;
+            while let Some(p) = parent {
+                if self.joints.iter().any(|j| j.node == p) {
+                    root = false;
+                    break;
+                }
+                parent = self.nodes[p].parent;
+            }
+            if !root {
+                continue;
+            }
+            let mut delta = conversion().transform_vector3(
+                globals[joint.node].w_axis.truncate() - initial[joint.node].w_axis.truncate(),
+            );
+            if sample.root_motion == io_types::RootMotion::InPlace {
+                delta.z = 0.;
+            }
+            let parent = self.nodes[joint.node]
+                .parent
+                .map_or(Mat4::IDENTITY, |p| globals[p]);
+            nodes[joint.node].translation -=
+                (conversion() * parent).inverse().transform_vector3(delta);
+        }
+        nodes
+    }
+    /// Blend local translations/scales and unit rotations, never skin matrices.
+    pub fn palette_blend(
+        &self,
+        current: PoseSample,
+        from: Option<(PoseSample, f32)>,
+    ) -> Vec<[f32; 16]> {
+        let mut nodes = self.controlled_locals(current);
+        if let Some((source, weight)) = from {
+            let old = self.controlled_locals(source);
+            let weight = weight.clamp(0., 1.);
+            for (n, o) in nodes.iter_mut().zip(old) {
+                n.translation = o.translation.lerp(n.translation, weight);
+                n.scale = o.scale.lerp(n.scale, weight);
+                n.rotation = o.rotation.slerp(n.rotation, weight).normalize();
+            }
+        }
+        let globals = self.node_globals(&nodes);
+        self.joints
+            .iter()
+            .map(|j| (conversion() * globals[j.node] * j.inverse_bind).to_cols_array())
+            .collect()
     }
 
     pub fn palette(&self, clip: Option<usize>, time: f32) -> Vec<[f32; 16]> {
@@ -625,6 +694,72 @@ pub fn load_model(path: &Path) -> Result<Model, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn controlled_root_motion_and_local_rotation_blending() {
+        let mut model = Model::unit_box();
+        model.nodes = vec![Node {
+            name: Some("root".into()),
+            parent: None,
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }];
+        model.order = vec![0];
+        model.joints = vec![Joint {
+            node: 0,
+            inverse_bind: Mat4::IDENTITY,
+        }];
+        model.clips.push(Clip {
+            name: "travel".into(),
+            start: 0.,
+            duration: 1.,
+            tracks: vec![
+                Track {
+                    node: 0,
+                    times: vec![0., 1.],
+                    step: false,
+                    values: Values::Translation(vec![Vec3::ZERO, Vec3::new(2., 3., 4.)]),
+                },
+                Track {
+                    node: 0,
+                    times: vec![0., 1.],
+                    step: false,
+                    values: Values::Rotation(vec![Quat::IDENTITY, Quat::from_rotation_y(1.)]),
+                },
+            ],
+        });
+        let sample = PoseSample {
+            clip: 0,
+            time: 1.,
+            looping: false,
+            root_motion: io_types::RootMotion::Authored,
+        };
+        let position = |s| conversion().transform_point3(model.controlled_locals(s)[0].translation);
+        let authored = position(sample);
+        let planar = position(PoseSample {
+            root_motion: io_types::RootMotion::InPlace,
+            ..sample
+        });
+        assert!(planar.abs_diff_eq(Vec3::new(0., 0., authored.z), 1e-5));
+        assert!(
+            position(PoseSample {
+                root_motion: io_types::RootMotion::InPlaceFixedHeight,
+                ..sample
+            })
+            .length()
+                < 1e-5
+        );
+        let source = PoseSample { time: 0., ..sample };
+        assert_eq!(
+            model.palette_blend(sample, Some((source, 0.))),
+            model.palette_blend(source, None)
+        );
+        let middle = Mat4::from_cols_array(&model.palette_blend(sample, Some((source, 0.5)))[0]);
+        assert!(middle.w_axis.truncate().abs_diff_eq(authored * 0.5, 1e-5));
+        for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
+            assert!((middle.transform_vector3(axis).length() - 1.).abs() < 1e-5);
+        }
+    }
     #[test]
     fn palette_mapping_handles_joint_order_and_rejects_incompatible_bind_space() {
         let mut source = Model::unit_box();
