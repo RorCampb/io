@@ -71,7 +71,7 @@ typedef struct IoWorkerStats {
 typedef struct IoDamageText { float x,y,alpha;uint32_t amount; } IoDamageText;
 typedef struct IoProjectileView { IoVec3 position;float radius; } IoProjectileView;
 /* Read-only, screen-projected object gauges. Coordinates are logical window pixels. */
-typedef struct IoWorldMeter { float x,y,value,color[3];char label[24]; } IoWorldMeter;
+typedef struct IoWorldMeter { float x,y,value,width,color[3];char label[24]; } IoWorldMeter;
 typedef struct IoGameView {
     uint64_t selected_item;
     uint32_t enabled,free_movement,line_count,damage_count;
@@ -80,7 +80,7 @@ typedef struct IoGameView {
     uint32_t projectile_count,reserved;
     IoProjectileView projectiles[4];
     uint32_t meter_count,meter_reserved;
-    IoWorldMeter meters[8];
+    IoWorldMeter meters[1024];
 } IoGameView;
 typedef struct IoGameAction { uint32_t kind,slot; float x,y; } IoGameAction;
 /* Owned UI copy; no borrowed strings. Null clears output and returns false. */

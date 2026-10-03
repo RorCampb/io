@@ -37,8 +37,33 @@ pub(crate) struct RouteCoordinator<D: TraversalExecutor> {
     reconsider_after_plan: bool,
     inline_reconsider: Option<(Agent<D::Routes>, Vec3)>,
     reconsider_requested: bool,
+    pub priority: NavigationPriority,
+    priority_seconds: f32,
 }
 impl<D: TraversalExecutor> RouteCoordinator<D> {
+    pub fn prioritize(
+        &mut self,
+        ticket: NavigationTicket,
+        priority: NavigationPriority,
+        seconds: f32,
+    ) -> Result<NavigationTicket, NavigationError> {
+        if ticket != self.feedback.ticket {
+            return Err(NavigationError::StaleTicket);
+        }
+        if !seconds.is_finite() || !(0.05..=2.).contains(&seconds) {
+            return Err(NavigationError::InvalidConfiguration);
+        }
+        self.priority = priority;
+        self.priority_seconds = seconds;
+        Ok(ticket)
+    }
+    pub fn advance_priority(&mut self, seconds: f32) {
+        self.priority_seconds = (self.priority_seconds - seconds).max(0.);
+        if self.priority_seconds == 0. {
+            self.priority = NavigationPriority::Routine;
+        }
+        self.executor.navigation_priority(self.priority);
+    }
     pub fn set_planning(&mut self, mode: PlanningMode) {
         self.background = mode == PlanningMode::Background;
         self.inflight = None;
@@ -93,6 +118,8 @@ impl<D: TraversalExecutor> RouteCoordinator<D> {
             reconsider_after_plan: false,
             inline_reconsider: None,
             reconsider_requested: false,
+            priority: NavigationPriority::Routine,
+            priority_seconds: 0.,
             active_step: None,
             inputs_revision: None,
             executor: binding.executor,
@@ -127,6 +154,9 @@ impl<D: TraversalExecutor> RouteCoordinator<D> {
             .checked_add(1)
             .ok_or(NavigationError::RevisionExhausted)?;
         self.goal = goal;
+        self.priority = NavigationPriority::Routine;
+        self.priority_seconds = 0.;
+        self.executor.navigation_priority(self.priority);
         self.reconsider_after_plan = false;
         self.inline_reconsider = None;
         self.reconsider_requested = false;
@@ -331,6 +361,7 @@ impl<D: TraversalExecutor> RouteCoordinator<D> {
                 world: std::sync::Arc::new(world.snapshot()),
                 familiar: self.familiar_points.clone(),
                 horizon: self.follower.horizon(),
+                priority: self.priority,
             };
             if planner.submit(job, nav.configuration())? {
                 self.inflight = Some(key);
@@ -500,6 +531,10 @@ impl<D: TraversalExecutor> RouteCoordinator<D> {
         };
         match execution.progress {
             Progress::Running => {}
+            Progress::Reconsider => {
+                self.reconsider(self.feedback.ticket)
+                    .map_err(|_| Error::InvalidInput)?;
+            }
             Progress::Complete if next.is_some() => {
                 self.follower.agent.complete_step();
                 self.executor.cancel();

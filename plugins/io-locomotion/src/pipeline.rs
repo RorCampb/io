@@ -2,10 +2,12 @@
 //! No global cache, worker or new movement authority. Application stays in Motor.
 use crate::surface::Scenery;
 use io_game::stage::{Stage, Then};
+use io_game::PluginWorld;
 use io_types::Vec3;
 use io_world::{
     character_path_clear_of_actors, trace_character_walk, CharacterBody, CharacterWalk, WorldView,
 };
+use std::sync::Arc;
 
 #[derive(Default, Debug)]
 pub(crate) struct WalkScratch(pub Vec<Vec3>);
@@ -63,6 +65,147 @@ impl SupportedTrajectory<'_> {
     }
     pub fn walk(&self) -> CharacterWalk {
         self.walk
+    }
+    pub(crate) fn scenery_path(&self) -> SceneryPath {
+        SceneryPath {
+            identity: self.world.changes().map(|c| c.identity()),
+            revision: self.world.navigation_revision(),
+            shape: self.shape,
+            points: self.points.into(),
+            walk: self.walk,
+        }
+    }
+}
+
+/// Geometry evidence retained with the provider's existing revision-bound edge cache.
+/// Transient actor clearance is never cached here.
+#[derive(Clone, Debug)]
+pub(crate) struct SceneryPath {
+    identity: Option<u64>,
+    revision: u64,
+    shape: CharacterBody,
+    points: Arc<[Vec3]>,
+    walk: CharacterWalk,
+}
+impl SceneryPath {
+    pub(crate) fn point_count(&self) -> usize {
+        self.points.len()
+    }
+    pub(crate) fn clear(
+        &self,
+        world: &dyn WorldView,
+        actor: Option<u64>,
+        start: Vec3,
+        end: Vec3,
+        shape: CharacterBody,
+    ) -> Option<bool> {
+        if self.identity.is_none()
+            || self.identity != world.changes().map(|c| c.identity())
+            || self.revision != world.navigation_revision()
+            || self.shape != shape
+            || self.points.first() != Some(&start)
+            || self.walk.position != end
+            || !self.walk.reached
+        {
+            return None;
+        }
+        Some(
+            actor.is_none()
+                || ActorClearanceStage
+                    .run(SupportedTrajectory {
+                        world,
+                        actor,
+                        shape,
+                        points: &self.points,
+                        walk: self.walk,
+                    })
+                    .is_ok(),
+        )
+    }
+}
+
+/// A one-step handoff owns the exclusive world borrow until `Motor::update_prepared`
+/// consumes it. A different body, command or stance falls back to validation.
+///
+/// ```compile_fail
+/// use io_game::PluginWorld;
+/// use io_locomotion::pipeline::StepHandoff;
+/// fn mutate_during_handoff(world: &mut PluginWorld<()>) {
+///     let handoff = StepHandoff::new(world);
+///     world.set_character_height(1, 2.);
+///     let _ = handoff.view();
+/// }
+/// ```
+pub struct StepHandoff<'a, 'w, E> {
+    world: &'a mut PluginWorld<'w, E>,
+    prepared: Option<PreparedWalk>,
+    scratch: Vec<Vec3>,
+}
+pub(crate) struct PreparedWalk {
+    actor: u64,
+    revision: u64,
+    start: Vec3,
+    delta: Vec3,
+    shape: CharacterBody,
+    walk: CharacterWalk,
+}
+impl PreparedWalk {
+    pub(crate) fn matching(
+        self,
+        world: &dyn WorldView,
+        actor: u64,
+        start: Vec3,
+        delta: Vec3,
+        shape: CharacterBody,
+    ) -> Option<CharacterWalk> {
+        (self.actor == actor
+            && self.revision == world.revision()
+            && self.start == start
+            && self.delta == delta
+            && self.shape == shape)
+            .then_some(self.walk)
+    }
+}
+impl<'a, 'w, E> StepHandoff<'a, 'w, E> {
+    pub fn new(world: &'a mut PluginWorld<'w, E>) -> Self {
+        Self {
+            world,
+            prepared: None,
+            scratch: Vec::new(),
+        }
+    }
+    pub fn view(&self) -> &dyn WorldView {
+        self.world
+    }
+    /// Replace any prior proposal with a full, supported and actor-clear step.
+    /// Failure retains no permission to move. This does not mutate the world.
+    pub fn prepare(&mut self, actor: u64, start: Vec3, delta: Vec3, shape: CharacterBody) -> bool {
+        self.prepared = None;
+        let Ok(walk) = walk(
+            self.world,
+            Some(actor),
+            start,
+            delta,
+            shape,
+            &mut self.scratch,
+        ) else {
+            return false;
+        };
+        if !walk.reached {
+            return false;
+        }
+        self.prepared = Some(PreparedWalk {
+            actor,
+            revision: self.world.revision(),
+            start,
+            delta,
+            shape,
+            walk,
+        });
+        true
+    }
+    pub(crate) fn into_parts(self) -> (&'a mut PluginWorld<'w, E>, Option<PreparedWalk>) {
+        (self.world, self.prepared)
     }
 }
 

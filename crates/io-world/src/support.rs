@@ -134,6 +134,8 @@ pub fn character_support(
 #[derive(Clone, Copy, Debug)]
 pub struct CharacterWalk {
     pub position: Vec3,
+    /// Support at the requested start, retained for downstream gravity decisions.
+    pub initial_support: Option<CharacterSupport>,
     pub support: Option<CharacterSupport>,
     /// False means walking stopped before the requested horizontal displacement.
     pub reached: bool,
@@ -183,9 +185,11 @@ fn walk_recorded(
     if let Some(points) = trace.as_mut() {
         points.push(start);
     }
+    let initial_support = character_support(world, excluded, start, shape, SupportProbe::CONTACT)?;
     let mut result = CharacterWalk {
         position: start,
-        support: character_support(world, excluded, start, shape, SupportProbe::CONTACT)?,
+        initial_support,
+        support: initial_support,
         reached: false,
     };
     if result.support.is_none() || !fits(world, excluded, start, shape) {

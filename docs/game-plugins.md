@@ -23,6 +23,11 @@ An Item has one identity and one set of world-owned components. A model is its
 appearance, not a gameplay class. Plugin bindings refer to the existing Item IDs.
 They do not make a separate character world or copy health/physics state.
 
+Plugins can connect those same Item IDs with typed, bounded
+[communication channels](item-channels.md). Each member has independent reader
+progress over a shared message log. This is separate from the lossy presentation
+event history; plugins interpret reports through their own observation/behavior stages.
+
 ## Implementing a Plugin
 
 Implement `io_game::GamePlugin` in a Rust module or crate. A separate crate is

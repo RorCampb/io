@@ -50,15 +50,16 @@ pub fn game(library: &ModelLibrary, world: &World) -> Result<crate::game::Game, 
                 .collect::<Result<_, String>>()?;
             Ok((player, clips))
         };
-        let (player, clips) = bind(&def.player, &def.locomotion)?;
+        let definitions = def.resolve_locomotion()?;
+        let (player, clips) = bind(&def.player, &definitions.default)?;
+        let player = io_locomotion::Motor::from_shared(definitions.default, player, clips, world)?;
         let mut agents = Vec::new();
         if let Some(navigation) = &def.navigation {
-            for npc in &navigation.agents {
-                let settings = npc.locomotion.as_ref().unwrap_or(&def.locomotion);
-                let (actor, clips) = bind(&npc.item, settings)?;
+            for (npc, settings) in navigation.agents.iter().zip(definitions.agents) {
+                let (actor, clips) = bind(&npc.item, &settings)?;
                 agents.push(io_playground::NpcBinding {
                     steering: npc.steering,
-                    motor: io_locomotion::Motor::new(settings.clone(), actor, clips, world)?,
+                    motor: io_locomotion::Motor::from_shared(settings, actor, clips, world)?,
                     goal: vec(npc.goal),
                     can_crouch: npc.can_crouch,
                     familiar_points: npc.familiar_points.iter().copied().map(vec).collect(),
@@ -106,7 +107,7 @@ pub fn game(library: &ModelLibrary, world: &World) -> Result<crate::game::Game, 
             })
             .collect::<Result<Vec<_>, String>>()?;
         let mut plugin =
-            io_playground::Traversal::with_npcs(def.clone(), player, clips, agents, world)?
+            io_playground::Traversal::with_player_motor(def.clone(), player, agents, world)?
                 .with_observations(observations, world)?;
         let barriers = def
             .barriers()

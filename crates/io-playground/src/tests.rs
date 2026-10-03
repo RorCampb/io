@@ -41,6 +41,7 @@ fn fixture() -> (World, Game) {
         ],
     );
     let d = Definition {
+        locomotion_profiles: Default::default(),
         player: "hero".into(),
         navigation: None,
         observations: vec![],
@@ -48,6 +49,7 @@ fn fixture() -> (World, Game) {
         debug_routes: false,
         barrier_cycle: None,
         barrier_cycles: vec![],
+        battle: None,
         locomotion: Locomotion {
             walk_speed: 2.1,
             crouch_speed: 0.95,
@@ -130,6 +132,7 @@ fn attention_route_fixture(threshold: f32) -> (World, Game) {
         .collect();
     let motor = Motor::new(locomotion.clone(), 4, clips.clone(), &world).unwrap();
     let definition = Definition {
+        locomotion_profiles: Default::default(),
         obstacle_observations: None,
         player: "player".into(),
         locomotion,
@@ -142,6 +145,7 @@ fn attention_route_fixture(threshold: f32) -> (World, Game) {
                 item: "npc".into(),
                 goal: [6., 0., 0.],
                 locomotion: None,
+                locomotion_profile: None,
                 athletics: None,
                 can_crouch: false,
                 familiar_points: vec![],
@@ -159,6 +163,7 @@ fn attention_route_fixture(threshold: f32) -> (World, Game) {
         debug_routes: false,
         barrier_cycle: None,
         barrier_cycles: vec![],
+        battle: None,
     };
     let plugin = Traversal::with_npcs(
         definition,

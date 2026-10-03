@@ -5,6 +5,10 @@ pub use crate::steering::{
     AccelerationSteering, Steering, SteeringInput, SteeringOutput, SteeringSettings,
 };
 use crate::surface::{Action, Agent, MovementProfile, Navigation, SurfaceRoutes, Waypoint};
+use crate::trajectory::{
+    CornerRefiner, TrajectoryRefiner, TrajectoryRequest, TrajectorySettings, TrajectoryStage,
+};
+use io_game::stage::Stage;
 use io_game::PluginWorld;
 use io_traversal::{Error, NavigationError, NavigationTicket};
 use io_traversal::{Execution, Progress, TraversalExecutor};
@@ -13,6 +17,24 @@ use io_world::WorldView;
 pub type Movement = io_traversal::Movement<SurfaceExecutor>;
 pub type MovementEvent = io_traversal::MovementEvent<MotionEvent>;
 pub type ActorFeedback = io_traversal::ActorFeedback<MotorFeedback>;
+fn prepare_step<E>(
+    handoff: &mut crate::pipeline::StepHandoff<'_, '_, E>,
+    motor: &Motor,
+    navigation: &mut Navigation,
+    agent: &Agent,
+    start: Vec3,
+    action: Action,
+    dt: f32,
+) -> bool {
+    navigation.record_steering_query();
+    let delta = motor.planar_delta(dt, action == Action::Crouch);
+    let domain = navigation.configuration();
+    delta.x.hypot(delta.y) <= 6.
+        && domain.cell(start).is_some()
+        && domain.cell(start + delta).is_some()
+        && (action != Action::Crouch || agent.profile().crouch_height.is_some())
+        && handoff.prepare(motor.actor(), start, delta, agent.profile().shape(action))
+}
 pub type MovementFrame = io_traversal::MovementFrame<MotorFeedback, MotionEvent>;
 #[derive(Clone, Copy, Debug)]
 pub struct MotorFeedback {
@@ -38,8 +60,11 @@ pub struct SurfaceExecutor {
     can_crouch: bool,
     settings: SteeringSettings,
     steering: Option<std::sync::Arc<dyn Steering>>,
+    refiner: Option<std::sync::Arc<dyn TrajectoryRefiner>>,
+    trajectory: TrajectoryStage,
     previous: Option<MotorFeedback>,
     stalled: f32,
+    priority: io_traversal::NavigationPriority,
 }
 impl From<ActorBinding> for io_traversal::ActorBinding<SurfaceExecutor> {
     fn from(b: ActorBinding) -> Self {
@@ -51,10 +76,54 @@ impl From<ActorBinding> for io_traversal::ActorBinding<SurfaceExecutor> {
                 can_crouch: b.can_crouch,
                 settings: b.steering,
                 steering: None,
+                refiner: None,
+                trajectory: Default::default(),
                 previous: None,
                 stalled: 0.,
+                priority: Default::default(),
             },
         }
+    }
+}
+impl SurfaceExecutor {
+    pub fn local_trajectory(&self) -> &[Vec3] {
+        self.trajectory.points()
+    }
+    pub fn trajectory_stats(&self) -> crate::trajectory::TrajectoryStats {
+        self.trajectory.stats
+    }
+}
+pub trait TrajectoryControl {
+    fn set_trajectory_refiner<R: TrajectoryRefiner + 'static>(
+        &mut self,
+        actor: u64,
+        settings: TrajectorySettings,
+        refiner: R,
+        world: &dyn WorldView,
+    ) -> Result<NavigationTicket, NavigationError>;
+}
+impl TrajectoryControl for io_traversal::Movement<SurfaceExecutor> {
+    fn set_trajectory_refiner<R: TrajectoryRefiner + 'static>(
+        &mut self,
+        actor: u64,
+        settings: TrajectorySettings,
+        refiner: R,
+        world: &dyn WorldView,
+    ) -> Result<NavigationTicket, NavigationError> {
+        settings
+            .validate()
+            .map_err(|_| NavigationError::InvalidConfiguration)?;
+        let mut executor = self
+            .executor(actor)
+            .ok_or(NavigationError::UnknownActor)?
+            .clone();
+        executor.settings.trajectory = Some(settings);
+        executor.refiner = Some(std::sync::Arc::new(refiner));
+        let ticket = self
+            .actor(actor)
+            .ok_or(NavigationError::UnknownActor)?
+            .ticket;
+        self.replace_executor(ticket, executor, world)
     }
 }
 pub trait SteeringControl {
@@ -127,7 +196,14 @@ impl TraversalExecutor for SurfaceExecutor {
     }
     fn cancel(&mut self) {
         self.motor.cancel();
+        self.trajectory.clear();
         self.stalled = 0.;
+    }
+    fn navigation_priority(&mut self, priority: io_traversal::NavigationPriority) {
+        if priority > self.priority {
+            self.trajectory.clear();
+        }
+        self.priority = priority;
     }
     fn execute<E>(
         &mut self,
@@ -148,6 +224,8 @@ impl TraversalExecutor for SurfaceExecutor {
         let mut progress = Progress::Running;
         let mut requested_velocity = Vec3::default();
         let mut yielding = false;
+        let mut complete_corner = false;
+        let mut handoff = crate::pipeline::StepHandoff::new(world);
         self.motor.command(Command::Move { x: 0., y: 0. })?;
         if let Some(next) = next {
             let crouched = next.action == Action::Crouch;
@@ -157,6 +235,38 @@ impl TraversalExecutor for SurfaceExecutor {
             } else {
                 self.motor.settings().walk_speed
             };
+            let velocity = self.previous.map_or(Vec3::default(), |f| f.actual_velocity);
+            let local = match self.settings.trajectory {
+                Some(mut settings) => {
+                    if self.priority != io_traversal::NavigationPriority::Routine {
+                        settings.refresh_seconds = settings.refresh_seconds.min(0.05);
+                    }
+                    Some(self.trajectory.run(TrajectoryRequest {
+                        world: handoff.view(),
+                        navigation,
+                        agent,
+                        next,
+                        position: start,
+                        velocity,
+                        speed,
+                        braking: self.settings.braking,
+                        seconds: dt,
+                        settings,
+                        refiner: self.refiner.as_deref().unwrap_or(&CornerRefiner),
+                    })?)
+                }
+                None => None,
+            };
+            let target = local.map_or(next.position, |l| l.position);
+            let curved_target = !self.trajectory.points().is_empty();
+            let limit = local
+                .map_or(speed, |l| l.speed)
+                .max((velocity.x.hypot(velocity.y) - self.settings.braking * dt).max(0.1))
+                .min(speed);
+            complete_corner = local.is_some_and(|l| l.complete_corner);
+            if local.is_some_and(|l| l.reconsider) {
+                progress = Progress::Reconsider;
+            }
             requested_velocity = self
                 .steering
                 .as_deref()
@@ -164,24 +274,46 @@ impl TraversalExecutor for SurfaceExecutor {
                 .steer(SteeringInput {
                     actor,
                     position: start,
-                    target: next.position,
-                    current_velocity: self.previous.map_or(Vec3::default(), |f| f.actual_velocity),
-                    max_speed: speed,
+                    target,
+                    current_velocity: velocity,
+                    max_speed: limit,
                     seconds: dt,
                 })?
                 .velocity();
             if requested_velocity.x.hypot(requested_velocity.y) > speed + 0.00001 {
                 return Err(Error::InvalidInput);
             }
-            if !navigation.steering_segment_clear(
-                world,
+            if local.is_some() {
+                let change = requested_velocity - velocity;
+                let budget = self.settings.braking.max(self.settings.acceleration) * dt;
+                requested_velocity =
+                    velocity + change.scaled((budget / change.x.hypot(change.y).max(1e-6)).min(1.));
+            }
+            if self.priority == io_traversal::NavigationPriority::Urgent {
+                // Supplied locomotion policy: brake while the leased conflict is
+                // imminent. Do not accelerate into a stale route or reset the ticket.
+                let planar = Vec3::new(velocity.x, velocity.y, 0.);
+                let speed = planar.x.hypot(planar.y);
+                requested_velocity =
+                    planar.scaled((1. - self.settings.braking * dt / speed.max(1e-6)).max(0.));
+                yielding = true;
+                complete_corner = false;
+            }
+            self.motor.command(Command::Move {
+                x: requested_velocity.x / speed,
+                y: requested_velocity.y / speed,
+            })?;
+            if !prepare_step(
+                &mut handoff,
+                &self.motor,
+                navigation,
                 agent,
                 start,
-                start + requested_velocity.scaled(dt),
                 next.action,
+                dt,
             ) {
                 yielding = navigation.steering_segment_clear(
-                    &crate::surface::Scenery(world),
+                    &crate::surface::Scenery(handoff.view()),
                     agent,
                     start,
                     start + requested_velocity.scaled(dt),
@@ -189,7 +321,13 @@ impl TraversalExecutor for SurfaceExecutor {
                 );
                 // Safety outranks acceleration: stop, then turn from rest along the safe route.
                 requested_velocity = Vec3::default();
-                if !yielding {
+                self.trajectory.clear();
+                complete_corner = false;
+                if !yielding && curved_target {
+                    // A blocked rounded continuation must not pull us back toward
+                    // the coarse corner we have already started bypassing.
+                    progress = Progress::Blocked;
+                } else if !yielding && self.priority != io_traversal::NavigationPriority::Urgent {
                     // A prepared route is not permission to cross changed scenery.
                     // Try turning from rest before reporting an invalid connector;
                     // inertia alone must not cause a needless route replacement.
@@ -209,12 +347,18 @@ impl TraversalExecutor for SurfaceExecutor {
                     if direct.x.hypot(direct.y) > speed + 0.00001 {
                         return Err(Error::InvalidInput);
                     }
-                    if navigation.steering_segment_clear(
-                        world,
+                    self.motor.command(Command::Move {
+                        x: direct.x / speed,
+                        y: direct.y / speed,
+                    })?;
+                    if prepare_step(
+                        &mut handoff,
+                        &self.motor,
+                        navigation,
                         agent,
                         start,
-                        start + direct.scaled(dt),
                         next.action,
+                        dt,
                     ) {
                         requested_velocity = direct;
                     } else {
@@ -230,7 +374,7 @@ impl TraversalExecutor for SurfaceExecutor {
         } else if agent.status() == io_traversal::navigation::Status::Arrived {
             self.motor.command(Command::Crouch(false))?;
         }
-        let events = self.motor.update(world, dt)?;
+        let events = self.motor.update_prepared(handoff, dt)?;
         let end = world
             .item(actor)
             .ok_or(Error::InvalidWorld)?
@@ -262,6 +406,9 @@ impl TraversalExecutor for SurfaceExecutor {
             motion: self.motor.motion(),
         };
         self.previous = Some(feedback);
+        if complete_corner && matches!(progress, Progress::Running | Progress::Reconsider) {
+            progress = Progress::Complete;
+        }
         Ok(Execution {
             feedback,
             events,

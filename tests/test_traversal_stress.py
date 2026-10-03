@@ -5,9 +5,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from build_traversal_stress import scene
 from benchmark_navigation import activity_summary
+from build_reaction_demo import scene as reaction_scene
 
 
 class TraversalStress(unittest.TestCase):
+    def test_reaction_lanes_use_real_speed_variants_and_existing_contracts(self):
+        s = reaction_scene()
+        self.assertEqual(s, reaction_scene())
+        traversal = s["traversal"]
+        self.assertEqual(len(traversal["navigation"]["agents"]), 3)
+        self.assertEqual([12 / b["travel_seconds"] for b in traversal["barrier_cycles"]], [1, 3, 6])
+        self.assertEqual(traversal["obstacle_observations"]["reaction"], {})
+        self.assertTrue(traversal["debug_routes"])
+        self.assertEqual(len({i["name"] for i in s["items"]}), len(s["items"]))
+
     def test_route_guides_are_an_optional_presentation_setting(self):
         plain, traced = scene(), scene(debug_routes=True)
         self.assertFalse(plain["traversal"].pop("debug_routes"))
@@ -20,6 +31,7 @@ class TraversalStress(unittest.TestCase):
         settings = traversal["obstacle_observations"]
         self.assertEqual(settings["observers_per_tick"], 8)
         self.assertEqual(settings["tracks_per_observer"], 6)
+        self.assertEqual(settings["character_tracks_per_observer"], 6)
         self.assertGreater(settings["notice_attention"], 0)
 
     def test_simulation_rate_is_configurable_without_changing_workload(self):
@@ -46,7 +58,7 @@ class TraversalStress(unittest.TestCase):
         self.assertEqual(activity_summary({"actors": []})["moving_fraction"], 0)
 
     def test_reproducible_and_population_is_not_queue_capacity(self):
-        for count in (16, 64, 128, 256):
+        for count in (16, 64, 128, 256, 384):
             s = scene(count)
             self.assertEqual(s, scene(count))
             self.assertEqual(len(s["traversal"]["navigation"]["agents"]), count)
@@ -71,8 +83,20 @@ class TraversalStress(unittest.TestCase):
                             timed["traversal"]["navigation"])
 
     def test_malformed_generator_inputs_rejected(self):
-        for count in (0, 257):
+        for count in (0, 385, 1.5, True):
             with self.assertRaises(ValueError):
                 scene(count)
         with self.assertRaises(ValueError):
             scene(moving="typo")
+        for extra in (-1,13,True):
+            with self.assertRaises(ValueError):
+                scene(extra_obstacles=extra)
+
+    def test_dense_layout_adds_real_obstacles_without_changing_patrols(self):
+        basic, dense=scene(384), scene(384,extra_obstacles=12)
+        self.assertEqual(basic["traversal"],dense["traversal"])
+        props=[i for i in dense["items"] if "-extra-obstacle-" in i["name"]]
+        self.assertEqual(len(props),192)
+        self.assertTrue(all("collider" in i for i in props))
+        self.assertEqual(len(dense["items"])-len(basic["items"]),192)
+        self.assertEqual(dense["traversal"]["obstacle_observations"]["observers_per_tick"],24)

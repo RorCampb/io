@@ -7,6 +7,129 @@ fn library() -> ModelLibrary {
     )
     .unwrap()
 }
+
+fn reaction_library() -> ModelLibrary {
+    ModelLibrary::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/dungeon/reactions.json"),
+    )
+    .unwrap()
+}
+
+#[test]
+fn discovered_player_attention_ramps_up_then_decays_outside_view() {
+    let mut library = reaction_library();
+    let traversal = library.config.traversal.as_mut().unwrap();
+    traversal
+        .obstacle_observations
+        .as_mut()
+        .unwrap()
+        .character_tracks_per_observer = 6;
+    let npc = &mut traversal.navigation.as_mut().unwrap().agents[0];
+    npc.goal = [20., 40., 0.];
+    npc.on_arrival = io_playground::OnArrival::Stop;
+    let mut world = demo::world(&library).unwrap();
+    let mut game = demo::game(&library, &world).unwrap();
+    let player = game.traversal().unwrap().player();
+    let observer = game.traversal().unwrap().navigation_status()[0].0;
+    assert!(world.set_pose_3d(player, Vec3::new(20., 37., 0.), Default::default()));
+    for _ in 0..120 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+    }
+    let t = game.traversal().unwrap();
+    let before = t
+        .discovered_observations()
+        .find(|o| o.observer() == observer && o.target() == player)
+        .unwrap()
+        .attention();
+    assert!(before > 0.15);
+    assert!(t.observers_noticing(player) > 0);
+    assert!(world.set_pose_3d(player, Vec3::new(20., 47., 0.), Default::default()));
+    for _ in 0..60 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+    }
+    let after = game
+        .traversal()
+        .unwrap()
+        .discovered_observations()
+        .find(|o| o.observer() == observer && o.target() == player)
+        .unwrap();
+    assert_eq!(after.evidence(), 0.);
+    assert!(after.attention() < before);
+}
+
+#[test]
+fn crossing_demo_predicts_motion_and_retains_collision_safe_execution() {
+    for hz in [30, 60, 144] {
+        let mut library = reaction_library();
+        library
+            .config
+            .traversal
+            .as_mut()
+            .unwrap()
+            .navigation
+            .as_mut()
+            .unwrap()
+            .planning = io_traversal::PlanningMode::Inline;
+        let mut world = demo::world(&library).unwrap();
+        let mut game = demo::game(&library, &world).unwrap();
+        let mut first_reaction = None;
+        for tick in 0..hz * 12 {
+            game.step(&mut world, &[], 1. / hz as f32).unwrap();
+            let t = game.traversal().unwrap();
+            if t.discovery_stats().unwrap().predictive_replans > 0 {
+                first_reaction.get_or_insert(tick as f32 / hz as f32);
+            }
+            for npc in t.diagnostics() {
+                let item = world.item(npc.actor).unwrap();
+                assert!(io_world::character_fits(
+                    &world,
+                    npc.actor,
+                    item.transform.anchor,
+                    item.character_body.unwrap()
+                ));
+            }
+        }
+        let stats = game.traversal().unwrap().discovery_stats().unwrap();
+        eprintln!("crossing {hz}Hz first={first_reaction:?} stats={stats:?}");
+        assert!(first_reaction.is_some_and(|t| t < 5.));
+        // Successful early replanning may avoid reaching the urgent/braking threshold.
+        // Urgent prediction and braking are tested independently with forced conflicts.
+        assert!(stats.predictive_replans > 0);
+        assert!(
+            stats.predictive_replans < 100,
+            "bounded replan cadence: {stats:?}"
+        );
+    }
+}
+
+#[test]
+fn npc_meters_project_world_width_and_shrink_with_zoom() {
+    let library = Box::leak(Box::new(reaction_library()));
+    let world = demo::world(library).unwrap();
+    let game = demo::game(library, &world).unwrap();
+    let mut camera = crate::camera::Camera::new(Vec3::new(100., 100., 30.));
+    camera.set_zoom(1.);
+    let mut state = crate::app::App::with_world(world, camera, None, library);
+    state.set_test_game(game);
+    let mut app = crate::IoApp { state };
+    let mut view = std::mem::MaybeUninit::<crate::IoGameView>::uninit();
+    assert!(unsafe { crate::io_app_game_view(&app, view.as_mut_ptr()) });
+    let before = unsafe { view.assume_init() };
+    assert_eq!(before.meter_count, 6);
+    assert!(before.meters[..6]
+        .iter()
+        .all(|m| m.width > 5. && m.width.is_finite()));
+    assert_eq!(before.meters[0].label[0], b'E');
+    assert_eq!(before.meters[1].label[0], b'A');
+    assert!(app.state.dispatch(crate::app::Action::Zoom { steps: -3. }));
+    app.state.update(0.1);
+    let mut view = std::mem::MaybeUninit::<crate::IoGameView>::uninit();
+    assert!(unsafe { crate::io_app_game_view(&app, view.as_mut_ptr()) });
+    let after = unsafe { view.assume_init() };
+    assert_eq!(after.meter_count, 6);
+    assert!(after.meters[0].width < before.meters[0].width);
+    assert!((after.meters[1].y - after.meters[0].y - after.meters[0].width * 0.24).abs() < 0.001);
+}
 #[test]
 fn attention_demo_npc_observes_player_offscreen_and_retains_awareness_when_sight_breaks() {
     let library = library();

@@ -64,6 +64,7 @@ gpu-test: $(BUILD_DIR)/renderer-buffer-test
 	./$(BUILD_DIR)/renderer-buffer-test --editor
 	./$(BUILD_DIR)/renderer-buffer-test --attention
 	./$(BUILD_DIR)/renderer-buffer-test --pursuit
+	./$(BUILD_DIR)/renderer-buffer-test --reactions
 
 smoke: $(APP)
 	./$(APP) --smoke-test

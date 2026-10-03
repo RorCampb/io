@@ -166,3 +166,86 @@ fn occupancy_is_indexed_even_when_visuals_are_smaller() {
     let world = world(item);
     assert_eq!(world.query(Vec3::new(45., 0., 0.), 1.), vec![0]);
 }
+
+fn height_world() -> World {
+    world(Item {
+        character_body: Some(CharacterBody {
+            radius: 0.3,
+            height: 1.1,
+            max_slope: 0.8,
+        }),
+        ..item()
+    })
+}
+
+#[test]
+fn unchanged_character_height_does_not_publish_or_reindex() {
+    let mut world = height_world();
+    let snapshot = world.snapshot();
+    let before = world.item(1).unwrap().clone();
+    let revisions = (
+        world.revision(),
+        world.spatial_revision(),
+        world.navigation_revision(),
+    );
+    let cursor = world.changes().cursor();
+    for _ in 0..5000 {
+        assert!(world.set_character_height(1, 1.1));
+    }
+    assert_eq!(world.item(1).unwrap(), &before);
+    assert_eq!(
+        (
+            world.revision(),
+            world.spatial_revision(),
+            world.navigation_revision()
+        ),
+        revisions
+    );
+    assert_eq!(world.changes().cursor(), cursor);
+    assert_eq!(world.changes().since(cursor).unwrap().count(), 0);
+    assert_eq!(
+        world.query(Vec3::default(), 1.),
+        snapshot.query(Vec3::default(), 1.)
+    );
+}
+
+#[test]
+fn character_height_changes_publish_once_and_preserve_snapshots() {
+    let mut world = height_world();
+    let snapshot = world.snapshot();
+    let cursor = world.changes().cursor();
+    let before = world.item(1).unwrap().spatial_bounds();
+    assert!(before.max.z < 2.5);
+    assert!(world.set_character_height(1, 3.));
+    assert_eq!(world.revision(), 1);
+    assert_eq!(world.spatial_revision(), 1);
+    assert_eq!(world.navigation_revision(), snapshot.navigation_revision());
+    let changes: Vec<_> = world.changes().since(cursor).unwrap().collect();
+    assert_eq!(changes.len(), 1);
+    assert!(matches!(changes[0].source, ChangeSource::Item(1)));
+    assert_ne!(changes[0].before, changes[0].after);
+    assert_eq!(world.item(1).unwrap().spatial_bounds().max.z, 3.);
+    assert_eq!(world.query(Vec3::new(0., 0., 2.5), 0.01), vec![0]);
+    assert_eq!(snapshot.item(1).unwrap().spatial_bounds(), before);
+    assert_eq!(
+        snapshot.item(1).unwrap().character_body.unwrap().height,
+        1.1
+    );
+    assert!(world.set_character_height(1, 1.1));
+    assert_eq!(world.item(1).unwrap().spatial_bounds(), before);
+}
+
+#[test]
+fn invalid_character_height_requests_leave_world_unchanged() {
+    let mut world = height_world();
+    let before = world.item(1).unwrap().clone();
+    for height in [0., -1., f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(!world.set_character_height(1, height));
+    }
+    assert!(!world.set_character_height(99, 1.1));
+    assert_eq!(world.item(1).unwrap(), &before);
+    assert_eq!(world.revision(), 0);
+    assert_eq!(world.spatial_revision(), 0);
+    assert_eq!(world.changes().cursor(), 0);
+    assert!(!self::world(item()).set_character_height(1, 1.1));
+}

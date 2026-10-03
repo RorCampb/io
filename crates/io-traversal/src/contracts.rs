@@ -51,6 +51,12 @@ impl NavigationGoal {
 
 #[derive(Clone, Copy, Debug)]
 pub enum NavigationRequest {
+    /// Temporary scheduling/execution hint, not permission to ignore physical limits.
+    Prioritize {
+        ticket: NavigationTicket,
+        priority: NavigationPriority,
+        seconds: f32,
+    },
     Start {
         actor: u64,
         goal: NavigationGoal,
@@ -67,6 +73,15 @@ pub enum NavigationRequest {
     Reconsider {
         ticket: NavigationTicket,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum NavigationPriority {
+    #[default]
+    Routine,
+    Elevated,
+    Urgent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -10,6 +10,37 @@ or a general crowd-avoidance system.
 
 ## Run
 
+### Dense Crowd With Character Awareness
+
+```sh
+python3 tools/build_traversal_stress.py --npcs 384 --extra-obstacles 12 --debug-routes
+make release
+./build/release/io --scene assets/dungeon/stress-384.json
+```
+
+This variant triples the previous population: 24 NPCs per district, 384 total,
+1,897 Items and 1,064 colliders. It adds 192 collidable barricades/crates without
+changing the patrol destinations. Spawns are checked against body clearance and
+support, not merely distinct coordinates. The original 128-NPC scene remains.
+
+Both freshly generated stress scenes enable six scenery tracks **plus** six
+character tracks per observer. The latter can include the player or any nearby
+NPC, selected by distance, not a global all-pairs subscription or privileged
+player tracking. The 384 scene services 24 observers per tick, preserving the
+same nominal 16-tick sweep as the eight-observer 128 scene. FOV, occlusion,
+attention gain/decay and retention still apply; discovery alone is not notice.
+
+NPCs keep their patrol behavior. Noticing a character publishes observation
+facts and retains attention; it does not mean chase/attack. Character motion
+does not enter the moving-scenery braking/replanning policy, which would make
+crowds stop or continually replan around one another. Live body collisions remain.
+The HUD reports how many NPCs currently notice the player. E/A meters prefer an
+attended character target over scenery, and keep both values tied to that target.
+The meter buffer now holds 512 pairs, enough for every NPC here. Coarse route
+traces retain their separate 256-actor debug budget.
+
+### Original Size
+
 ```sh
 make release
 ./build/release/io --scene assets/dungeon/stress-128.json
@@ -20,7 +51,7 @@ make release
 - 128 NPCs, 1,449 total Items and 872 colliders. The gold character is the player.
 - Simulation target: 144 Hz, not a guarantee of achieved SIM Hz or display refresh.
 - Automatic observation: eight observers serviced per tick, up to six nearby
-  scenery tracks each. See [discovery configuration](attention.md#dynamic-obstacle-discovery-playground-plugin).
+  scenery and six character tracks each. See [discovery configuration](attention.md#dynamic-obstacle-discovery-playground-plugin).
 - Eight orange kinematic loads move ten metres over three seconds, resting twelve
   seconds between movements. They affect actual collision and navigation revisions.
 - WASD moves; Space jumps; Shift crouches. Existing two-finger orbit/pinch zoom and
@@ -38,6 +69,12 @@ accepted; an NPC with no accepted route has no line. The overlay supports up to
 Set `debug_routes` to `false` for clean viewing/performance comparisons. Regenerate
 with `--debug-routes` to keep the overlay enabled; the generator defaults it off.
 
+Agents now opt into `steering.trajectory` for rolling corner refinement. Yellow
+traces show local sampled trajectories overlaid on the coarse cyan/orange route.
+See [trajectory contracts and settings](movement-stages.md#rolling-local-trajectories).
+Remove that agent's `trajectory` setting for a waypoint-only comparison. The older
+saved scene variants remain unchanged; newly generated ones enable trajectories.
+
 Use `stress-16.json`, `stress-64.json` or `stress-256.json` to change population.
 `stress-overview.json` shows the entire district with 128 NPCs.
 `stress-static.json` keeps those eight loads stationary; `stress-churn.json` moves
@@ -51,7 +88,7 @@ python3 tools/build_traversal_stress.py --npcs 128 --long-routes \
   --output assets/dungeon/stress-long.json
 ```
 
-The generator supports 1..256 nonoverlapping spawns for this layout. `--long-routes`
+The generator supports 1..384 nonoverlapping spawns for this layout. `--long-routes`
 sends some agents between neighborhoods instead of only around their local block.
 `--moving timed|continuous|static` and `--overview` select the other controls.
 Package paths are rebased if output is written outside `assets/dungeon`.

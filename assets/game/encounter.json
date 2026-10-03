@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "dimensions": [100, 100, 20],
+  "origin": [0, 0, 0],
+  "simulation": {"tick_hz": 60},
+  "camera": {"target": [0, 0, 0], "zoom": 2.2, "render_distance": 100},
+  "assets": [{"name": "box", "builtin": "box"}],
+  "items": [
+    {"name": "floor", "asset": "box", "position": [-15, -15, -0.5], "scale": [30, 30, 0.5], "tint": [0.14, 0.19, 0.23],
+      "physics_body": {"type": "static"}, "collider": {"shape": {"type": "box", "half_extents": [15, 15, 0.25]}, "offset": [15, 15, 0.25]}},
+    {"name": "hero", "asset": "box", "position": [-3, 0, 0], "scale": [0.8, 0.8, 1.8], "tint": [0.2, 0.85, 1], "health": 50},
+    {"name": "guard", "asset": "box", "position": [2, 0, 0], "scale": [0.9, 0.9, 1.8], "tint": [1, 0.35, 0.2], "health": 30},
+    {"name": "mage", "asset": "box", "position": [5, 4, 0], "scale": [0.7, 0.7, 1.6], "tint": [1, 0.75, 0.2], "health": 24}
+  ],
+  "game": {
+    "version": 1,
+    "movement_seconds": 3,
+    "abilities": {
+      "sword": {"range": 2.5, "effect": {"type": "damage", "amount": 12}},
+      "spark": {"range": 12, "effect": {"type": "damage", "amount": 8}, "delivery": {"type": "projectile", "speed": 8}},
+      "claw": {"range": 2.2, "effect": {"type": "damage", "amount": 6}}
+    },
+    "templates": {
+      "adventurer": {"control": "player", "faction": 1, "initiative": 20, "movement_speed": 4,
+        "death_physics": {"mass": 2, "knockback_impulse": 4, "lift_impulse": 3, "half_extents": [0.4, 0.4, 0.9], "offset": [0.4, 0.4, 0.9]},
+        "abilities": ["sword", "spark"], "opportunity_ability": "sword"},
+      "fighter": {"control": "npc", "faction": 2, "initiative": 12, "movement_speed": 2.5,
+        "death_physics": {"mass": 2, "knockback_impulse": 4, "lift_impulse": 3, "half_extents": [0.45, 0.45, 0.9], "offset": [0.45, 0.45, 0.9]},
+        "abilities": ["claw"], "opportunity_ability": "claw"},
+      "caster": {"control": "npc", "faction": 2, "initiative": 8, "movement_speed": 2,
+        "death_physics": {"mass": 2, "knockback_impulse": 4, "lift_impulse": 3, "half_extents": [0.35, 0.35, 0.8], "offset": [0.35, 0.35, 0.8]},
+        "abilities": ["spark", "claw"], "opportunity_ability": "claw"}
+    },
+    "combatants": [
+      {"item": "hero", "template": "adventurer"},
+      {"item": "guard", "template": "fighter"},
+      {"item": "mage", "template": "caster"}
+    ]
+  }
+}

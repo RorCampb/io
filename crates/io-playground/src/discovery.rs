@@ -1,7 +1,11 @@
-//! Supplied playground policy: discover nearby scenery, not every Item in the world.
+//! Supplied playground policy: bounded nearby scenery and optional character observations.
+use crate::reaction::{
+    MotionEstimate, ObservedMotion, ReactionRequest, ReactionSettings, ReactionStage,
+};
 use crate::{ObservationBinding, ObservationTrack};
 use io_game::stage::Stage;
 use io_perception::{pipeline::ItemNotice, VisionProfile};
+use io_traversal::{NavigationPriority, NavigationRequest, NavigationStatus};
 use io_types::{Bounds, Rotation, Vec3};
 use io_world::{Collider, WorldView};
 use serde::{Deserialize, Serialize};
@@ -9,16 +13,20 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ObstacleObservationSettings {
+    pub reaction: Option<ReactionSettings>,
     pub vision: VisionProfile,
     pub notice_attention: f32,
     pub interval_seconds: f32,
     pub retention_seconds: f32,
     pub observers_per_tick: usize,
     pub tracks_per_observer: usize,
+    /// Separate capacity so nearby characters cannot evict scenery observations.
+    pub character_tracks_per_observer: usize,
 }
 impl Default for ObstacleObservationSettings {
     fn default() -> Self {
         Self {
+            reaction: None,
             vision: VisionProfile {
                 range: 18.,
                 fov_degrees: 200.,
@@ -30,11 +38,15 @@ impl Default for ObstacleObservationSettings {
             retention_seconds: 2.,
             observers_per_tick: 8,
             tracks_per_observer: 6,
+            character_tracks_per_observer: 0,
         }
     }
 }
 impl ObstacleObservationSettings {
     pub fn validate(self) -> Result<(), String> {
+        if let Some(settings) = self.reaction {
+            settings.validate()?;
+        }
         self.vision.validate()?;
         if !self.notice_attention.is_finite()
             || !(0.01..=1.).contains(&self.notice_attention)
@@ -44,6 +56,7 @@ impl ObstacleObservationSettings {
             || !(self.interval_seconds..=30.).contains(&self.retention_seconds)
             || !(1..=32).contains(&self.observers_per_tick)
             || !(1..=16).contains(&self.tracks_per_observer)
+            || self.character_tracks_per_observer > 16
         {
             return Err("invalid obstacle observation settings".into());
         }
@@ -73,8 +86,9 @@ impl Stage<ObstacleDiscoveryRequest<'_>> for ObstacleDiscoveryStage {
             .filter_map(|index| {
                 let item = &r.world.items()[index];
                 if item.id == r.observer
-                    || item.collider.is_none()
-                    || item.character_body.is_some()
+                    || (item.character_body.is_none() && item.collider.is_none())
+                    || (item.character_body.is_some()
+                        && r.settings.character_tracks_per_observer == 0)
                     || r.explicit_tracks
                         .iter()
                         .any(|t| t.observer() == r.observer && t.target() == item.id)
@@ -92,18 +106,37 @@ impl Stage<ObstacleDiscoveryRequest<'_>> for ObstacleDiscoveryStage {
                     p.z.clamp(b.min.z, b.max.z),
                 );
                 let d = (near - p).dot(near - p);
-                (d <= r.settings.vision.range.powi(2)).then_some((d, item.id))
+                (d <= r.settings.vision.range.powi(2)).then_some((
+                    d,
+                    item.id,
+                    item.character_body.is_some(),
+                ))
             })
             .collect::<Vec<_>>();
         candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         candidates.dedup_by_key(|c| c.1);
-        candidates.truncate(r.settings.tracks_per_observer);
-        Ok(candidates.into_iter().map(|(_, id)| id).collect())
+        let (mut scenery, mut characters) = (0, 0);
+        candidates.retain(|&(_, _, character)| {
+            let (count, limit) = if character {
+                (&mut characters, r.settings.character_tracks_per_observer)
+            } else {
+                (&mut scenery, r.settings.tracks_per_observer)
+            };
+            *count += 1;
+            *count <= limit
+        });
+        Ok(candidates.into_iter().map(|(_, id, _)| id).collect())
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct DiscoveryStats {
+    pub character_samples: u64,
+    pub character_notices: u64,
+    pub motion_samples: u64,
+    pub predicted_conflicts: u64,
+    pub urgent_reactions: u64,
+    pub predictive_replans: u64,
     pub scans: u64,
     pub samples: u64,
     pub notices: u64,
@@ -113,6 +146,8 @@ pub struct DiscoveryStats {
 }
 #[derive(Clone, Debug)]
 struct Tracked {
+    character: bool,
+    motion: MotionEstimate,
     track: ObservationTrack,
     last_near: f64,
     noticed_geometry: Option<NoticedGeometry>,
@@ -134,6 +169,8 @@ struct Observer {
 }
 #[derive(Clone, Debug)]
 pub(crate) struct ObstacleObservations {
+    motions: Vec<ObservedMotion>,
+    reactions: std::collections::BTreeMap<u64, (f64, NavigationPriority)>,
     settings: ObstacleObservationSettings,
     observers: Vec<Observer>,
     cursor: usize,
@@ -141,6 +178,105 @@ pub(crate) struct ObstacleObservations {
     pub stats: DiscoveryStats,
 }
 impl ObstacleObservations {
+    pub fn tracks(&self) -> impl Iterator<Item = &ObservationTrack> {
+        self.observers
+            .iter()
+            .flat_map(|o| o.tracks.iter().map(|t| &t.track))
+    }
+    /// Prefer attended characters for the traffic HUD, otherwise strongest scenery.
+    /// Both values still refer to one target, not independent maxima.
+    pub fn meters(&self) -> Vec<(u64, f32, f32)> {
+        self.observers
+            .iter()
+            .map(|o| {
+                let best = o.tracks.iter().max_by(|a, b| {
+                    (a.character && a.track.attention() >= self.settings.notice_attention)
+                        .cmp(
+                            &(b.character && b.track.attention() >= self.settings.notice_attention),
+                        )
+                        .then_with(|| a.track.attention().total_cmp(&b.track.attention()))
+                });
+                (
+                    o.actor,
+                    best.map_or(0., |t| t.track.evidence()),
+                    best.map_or(0., |t| t.track.attention()),
+                )
+            })
+            .collect()
+    }
+    pub fn reactions(
+        &mut self,
+        movement: &crate::movement::TraversalService,
+        world: &dyn WorldView,
+    ) -> Result<Vec<NavigationRequest>, String> {
+        let Some(settings) = self.settings.reaction else {
+            return Ok(vec![]);
+        };
+        let mut conflicts =
+            std::collections::BTreeMap::<u64, crate::reaction::PredictedConflict>::new();
+        for observation in &self.motions {
+            let Some(actor) = movement.actor(observation.observer) else {
+                continue;
+            };
+            if !matches!(
+                actor.status,
+                NavigationStatus::Following
+                    | NavigationStatus::Planning
+                    | NavigationStatus::Blocked
+            ) {
+                continue;
+            }
+            let Some(body) = world
+                .item(observation.observer)
+                .and_then(|i| i.character_body)
+            else {
+                continue;
+            };
+            let route = movement.route(observation.observer);
+            if !movement.has_route(observation.observer) {
+                continue;
+            }
+            if let Some(conflict) = ReactionStage.run(ReactionRequest {
+                observation: *observation,
+                now: self.seconds,
+                position: actor.execution.position,
+                velocity: actor.execution.actual_velocity,
+                body,
+                route: &route,
+                settings,
+            })? {
+                let best = conflicts.entry(observation.observer).or_insert(conflict);
+                if conflict.seconds < best.seconds {
+                    *best = conflict;
+                }
+            }
+        }
+        let mut requests = vec![];
+        for (id, conflict) in conflicts {
+            let ticket = movement.actor(id).unwrap().ticket;
+            self.stats.predicted_conflicts += 1;
+            requests.push(NavigationRequest::Prioritize {
+                ticket,
+                priority: conflict.priority,
+                seconds: settings.lease_seconds,
+            });
+            let state = self
+                .reactions
+                .entry(id)
+                .or_insert((f64::NEG_INFINITY, NavigationPriority::Routine));
+            if self.seconds - state.0 >= f64::from(settings.cooldown_seconds)
+                || conflict.priority > state.1
+            {
+                requests.push(NavigationRequest::Reconsider { ticket });
+                self.stats.predictive_replans += 1;
+                if conflict.priority == NavigationPriority::Urgent {
+                    self.stats.urgent_reactions += 1;
+                }
+                *state = (self.seconds, conflict.priority);
+            }
+        }
+        Ok(requests)
+    }
     pub fn take_route_notices(&mut self, mut ready: impl FnMut(u64) -> bool) -> Vec<ItemNotice> {
         self.observers
             .iter_mut()
@@ -150,6 +286,8 @@ impl ObstacleObservations {
     }
     pub fn new(settings: ObstacleObservationSettings, actors: impl Iterator<Item = u64>) -> Self {
         Self {
+            motions: vec![],
+            reactions: Default::default(),
             settings,
             observers: actors
                 .map(|actor| Observer {
@@ -174,6 +312,7 @@ impl ObstacleObservations {
             return Err("invalid observation timestep".into());
         }
         self.seconds += f64::from(dt);
+        self.motions.clear();
         let mut notices = Vec::new();
         // Rotate even when an observer isn't due. No all-NPC/all-Item scan or catch-up burst.
         for _ in 0..self.settings.observers_per_tick.min(self.observers.len()) {
@@ -203,6 +342,9 @@ impl ObstacleObservations {
                     entry.last_near = self.seconds;
                 }
                 world.item(entry.track.target()).is_some()
+                    && world
+                        .item(entry.track.target())
+                        .is_some_and(|i| i.character_body.is_some() == entry.character)
                     && !explicit.iter().any(|t| {
                         t.observer() == observer.actor && t.target() == entry.track.target()
                     })
@@ -214,17 +356,31 @@ impl ObstacleObservations {
                 if observer.tracks.iter().any(|t| t.track.target() == id) {
                     continue;
                 }
-                if observer.tracks.len() == self.settings.tracks_per_observer {
+                let character = world.item(id).unwrap().character_body.is_some();
+                let limit = if character {
+                    self.settings.character_tracks_per_observer
+                } else {
+                    self.settings.tracks_per_observer
+                };
+                if observer
+                    .tracks
+                    .iter()
+                    .filter(|t| t.character == character)
+                    .count()
+                    == limit
+                {
                     let Some(index) = observer
                         .tracks
                         .iter()
-                        .position(|t| !ids.contains(&t.track.target()))
+                        .position(|t| t.character == character && !ids.contains(&t.track.target()))
                     else {
                         continue;
                     };
                     observer.tracks.remove(index);
                 }
                 observer.tracks.push(Tracked {
+                    character,
+                    motion: Default::default(),
                     last_near: self.seconds,
                     noticed_geometry: None,
                     route_notice: None,
@@ -232,7 +388,10 @@ impl ObstacleObservations {
                         ObservationBinding {
                             observer: observer.actor,
                             target: id,
-                            label: format!("obstacle-{id}"),
+                            label: format!(
+                                "{}-{id}",
+                                if character { "character" } else { "obstacle" }
+                            ),
                             vision: self.settings.vision,
                             notice_attention: self.settings.notice_attention,
                         },
@@ -252,8 +411,39 @@ impl ObstacleObservations {
                 };
                 entry.track.update(world, seconds)?;
                 self.stats.samples += 1;
+                if entry.character {
+                    self.stats.character_samples += 1;
+                }
+                // Seeing another actor is not the scenery braking policy. Crowd
+                // response belongs to behavior/steering, not automatic global replans.
+                if !entry.character && self.settings.reaction.is_some() {
+                    let seen = entry.track.evidence() > 0.03;
+                    let bounds = seen.then(|| {
+                        world
+                            .item(entry.track.target())
+                            .unwrap()
+                            .current_spatial_bounds()
+                    });
+                    if let Some(velocity) = entry.motion.sample(bounds, self.seconds) {
+                        if entry.track.attention() >= self.settings.notice_attention {
+                            self.stats.motion_samples += 1;
+                            self.motions.push(ObservedMotion {
+                                observer: observer.actor,
+                                target: entry.track.target(),
+                                bounds: bounds.unwrap(),
+                                velocity,
+                                observed_at: self.seconds,
+                            });
+                        }
+                    }
+                }
                 if let Some(notice) = entry.track.notice() {
                     self.stats.notices += 1;
+                    if entry.character {
+                        self.stats.character_notices += 1;
+                        notices.push(notice);
+                        continue;
+                    }
                     let item = world.item(notice.target).ok_or("missing noticed Item")?;
                     let geometry = NoticedGeometry {
                         anchor: item.transform.anchor,
@@ -323,6 +513,62 @@ mod tests {
                 block(5, Vec3::new(0., 0., 5.), Vec3::new(20., 20., 0.5)),
             ],
         )
+    }
+
+    #[test]
+    fn characters_notice_each_other_without_colliders_or_scenery_replan_floods() {
+        let original = fixture();
+        let mut items = original.items().to_vec();
+        let mut peer = items[0].clone();
+        peer.id = 10;
+        peer.transform.anchor = Vec3::new(2., -2., 0.);
+        peer.transform.rotation = Rotation::yaw(std::f32::consts::PI).unwrap();
+        items.push(peer);
+        let mut hidden = items[0].clone();
+        hidden.id = 11;
+        hidden.transform.anchor = Vec3::new(0., -7., 0.);
+        items.push(hidden);
+        let world = World::new(original.space().clone(), items);
+        let settings = ObstacleObservationSettings {
+            reaction: Some(Default::default()),
+            tracks_per_observer: 1,
+            character_tracks_per_observer: 2,
+            ..Default::default()
+        };
+        let mut observations = ObstacleObservations::new(settings, [1, 10].into_iter());
+        let mut notices = vec![];
+        for _ in 0..30 {
+            notices.extend(observations.update(&world, &[], 0.1).unwrap());
+        }
+        assert!(notices.iter().any(|n| n.observer == 1 && n.target == 10));
+        assert!(notices.iter().any(|n| n.observer == 10 && n.target == 1));
+        assert!(
+            !notices.iter().any(|n| n.observer == 1 && n.target == 11),
+            "hidden character cannot be noticed"
+        );
+        assert!(observations.observers.iter().all(|o| o.tracks.len() <= 3));
+        assert!(
+            observations.observers[0]
+                .tracks
+                .iter()
+                .any(|t| !t.character),
+            "characters must not evict scenery"
+        );
+        assert!(observations.stats.character_notices > 0);
+        assert!(observations
+            .motions
+            .iter()
+            .all(|m| m.target != 1 && m.target != 10 && m.target != 11));
+        assert!(observations
+            .take_route_notices(|_| true)
+            .iter()
+            .all(|n| n.target != 1 && n.target != 10 && n.target != 11));
+        let tracked = observations
+            .tracks()
+            .find(|t| t.observer() == 1 && t.target() == 10)
+            .unwrap();
+        assert!(tracked.attention() >= settings.notice_attention);
+        assert!(observations.meters()[0].2 >= settings.notice_attention);
     }
     fn relocate(world: &mut World, id: u64, p: Vec3) {
         assert!(world.set_kinematic_target(id, p, Default::default()));
@@ -490,5 +736,33 @@ mod tests {
         assert!(observations.take_route_notices(|_| true).is_empty());
         observations.update(&world, &[], 0.1).unwrap();
         assert!(observations.take_route_notices(|_| true).is_empty());
+    }
+
+    #[test]
+    fn hidden_motion_never_enters_prediction_and_meters_share_one_target() {
+        let mut world = fixture();
+        let settings = ObstacleObservationSettings {
+            reaction: Some(Default::default()),
+            ..Default::default()
+        };
+        let mut observations = ObstacleObservations::new(settings, [1].into_iter());
+        for n in 0..30 {
+            relocate(&mut world, 3, Vec3::new(0., -7. - n as f32 * 0.01, 1.));
+            observations.update(&world, &[], 0.1).unwrap();
+            assert!(observations.motions.iter().all(|m| m.target != 3));
+        }
+        let meters = observations.meters();
+        assert_eq!(meters.len(), 1);
+        assert_eq!(meters[0].0, 1);
+        assert!(meters[0].1 > 0. && meters[0].2 > 0.);
+        assert!(observations.stats.motion_samples > 0);
+        let snapshot = observations.clone();
+        relocate(&mut world, 2, Vec3::new(0., -3.5, 1.));
+        observations.update(&world, &[], 0.1).unwrap();
+        assert!(observations
+            .motions
+            .iter()
+            .any(|m| m.target == 2 && m.velocity.y > 0.));
+        assert!(snapshot.motions.iter().all(|m| m.velocity.y == 0.));
     }
 }

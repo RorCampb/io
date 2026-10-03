@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "dimensions": [
+    100,
+    100,
+    30
+  ],
+  "origin": [
+    0,
+    0,
+    0
+  ],
+  "simulation": {
+    "tick_hz": 60
+  },
+  "camera": {
+    "target": [
+      0.0,
+      0.0,
+      1
+    ],
+    "zoom": 5,
+    "render_distance": 120
+  },
+  "assets": [
+    {
+      "name": "box",
+      "builtin": "box"
+    }
+  ],
+  "packages": [
+    {
+      "namespace": "mixamo",
+      "file": "../package.json"
+    }
+  ],
+  "items": [
+    {
+      "name": "floor",
+      "asset": "box",
+      "position": [
+        -3.5,
+        -3.5,
+        -0.2
+      ],
+      "scale": [
+        7.0,
+        7.0,
+        0.15
+      ],
+      "tint": [
+        0.13,
+        0.18,
+        0.2
+      ]
+    },
+    {
+      "name": "cover_to_stand_2",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        0.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "cover_to_stand_2",
+        "speed": 1
+      }
+    }
+  ]
+}

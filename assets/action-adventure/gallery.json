@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "dimensions": [
+    100,
+    100,
+    30
+  ],
+  "origin": [
+    0,
+    0,
+    0
+  ],
+  "simulation": {
+    "tick_hz": 60
+  },
+  "camera": {
+    "target": [
+      17.5,
+      10.5,
+      1
+    ],
+    "zoom": 0.8333333333333334,
+    "render_distance": 120
+  },
+  "assets": [
+    {
+      "name": "box",
+      "builtin": "box"
+    }
+  ],
+  "packages": [
+    {
+      "namespace": "mixamo",
+      "file": "package.json"
+    }
+  ],
+  "items": [
+    {
+      "name": "floor",
+      "asset": "box",
+      "position": [
+        -3.5,
+        -3.5,
+        -0.2
+      ],
+      "scale": [
+        42.0,
+        28.0,
+        0.15
+      ],
+      "tint": [
+        0.13,
+        0.18,
+        0.2
+      ]
+    },
+    {
+      "name": "cover_to_stand",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        0.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "cover_to_stand",
+        "speed": 1
+      }
+    },
+    {
+      "name": "cover_to_stand_2",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        7.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "cover_to_stand_2",
+        "speed": 1
+      }
+    },
+    {
+      "name": "crouched_sneaking_left",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        14.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "crouched_sneaking_left",
+        "speed": 1
+      }
+    },
+    {
+      "name": "crouched_sneaking_right",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        21.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "crouched_sneaking_right",
+        "speed": 1
+      }
+    },
+    {
+      "name": "falling_idle",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        28.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "falling_idle",
+        "speed": 1
+      }
+    },
+    {
+      "name": "falling_to_roll",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        35.0,
+        0.0,
+        0
+      ],
+      "animation": {
+        "clip": "falling_to_roll",
+        "speed": 1
+      }
+    },
+    {
+      "name": "hard_landing",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        0.0,
+        7.0,
+        0
+      ],
+      "animation": {
+        "clip": "hard_landing",
+        "speed": 1
+      }
+    },
+    {
+      "name": "idle",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        7.0,
+        7.0,
+        0
+      ],
+      "animation": {
+        "clip": "idle",
+        "speed": 1
+      }
+    },
+    {
+      "name": "idle_2",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        14.0,
+        7.0,
+        0
+      ],
+      "animation": {
+        "clip": "idle_2",
+        "speed": 1
+      }
+    },
+    {
+      "name": "idle_3",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        21.0,
+        7.0,
+        0
+      ],
+      "animation": {
+        "clip": "idle_3",
+        "speed": 1
+      }
+    },
+    {
+      "name": "idle_4",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        28.0,
+        7.0,
+        0
+      ],
+      "animation": {
+        "clip": "idle_4",
+        "speed": 1
+      }
+    },
+    {
+      "name": "idle_5",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        35.0,
+        7.0,
+        0
+      ],
+      "animation": {
+        "clip": "idle_5",
+        "speed": 1
+      }
+    },
+    {
+      "name": "jumping_up",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        0.0,
+        14.0,
+        0
+      ],
+      "animation": {
+        "clip": "jumping_up",
+        "speed": 1
+      }
+    },
+    {
+      "name": "left_cover_sneak",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        7.0,
+        14.0,
+        0
+      ],
+      "animation": {
+        "clip": "left_cover_sneak",
+        "speed": 1
+      }
+    },
+    {
+      "name": "left_turn",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        14.0,
+        14.0,
+        0
+      ],
+      "animation": {
+        "clip": "left_turn",
+        "speed": 1
+      }
+    },
+    {
+      "name": "right_cover_sneak",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        21.0,
+        14.0,
+        0
+      ],
+      "animation": {
+        "clip": "right_cover_sneak",
+        "speed": 1
+      }
+    },
+    {
+      "name": "right_turn",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        28.0,
+        14.0,
+        0
+      ],
+      "animation": {
+        "clip": "right_turn",
+        "speed": 1
+      }
+    },
+    {
+      "name": "run_to_stop",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        35.0,
+        14.0,
+        0
+      ],
+      "animation": {
+        "clip": "run_to_stop",
+        "speed": 1
+      }
+    },
+    {
+      "name": "running",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        0.0,
+        21.0,
+        0
+      ],
+      "animation": {
+        "clip": "running",
+        "speed": 1
+      }
+    },
+    {
+      "name": "running_in_place",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        7.0,
+        21.0,
+        0
+      ],
+      "animation": {
+        "clip": "running_in_place",
+        "speed": 1
+      }
+    },
+    {
+      "name": "stand_to_cover",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        14.0,
+        21.0,
+        0
+      ],
+      "animation": {
+        "clip": "stand_to_cover",
+        "speed": 1
+      }
+    },
+    {
+      "name": "stand_to_cover_2",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        21.0,
+        21.0,
+        0
+      ],
+      "animation": {
+        "clip": "stand_to_cover_2",
+        "speed": 1
+      }
+    },
+    {
+      "name": "walking",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        28.0,
+        21.0,
+        0
+      ],
+      "animation": {
+        "clip": "walking",
+        "speed": 1
+      }
+    },
+    {
+      "name": "walking_in_place",
+      "appearance": "mixamo/x_bot",
+      "position": [
+        35.0,
+        21.0,
+        0
+      ],
+      "animation": {
+        "clip": "walking_in_place",
+        "speed": 1
+      }
+    }
+  ]
+}

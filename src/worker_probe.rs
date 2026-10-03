@@ -19,6 +19,7 @@ pub struct WorkerProbe {
     pub planning: Option<io_traversal::PlanningStats>,
     pub navigation: Option<io_traversal::navigation::Stats>,
     pub discovery: Option<io_playground::DiscoveryStats>,
+    pub trajectory: Option<io_locomotion::trajectory::TrajectoryStats>,
     pub observed_ticks: Vec<TickSample>,
     pub actors: Vec<ActorSample>,
     pub tick_hz: u32,
@@ -321,6 +322,7 @@ pub fn probe_worker(path: &Path, frames: usize) -> Result<WorkerProbe, String> {
         planning: snapshot.game.traversal().and_then(|t| t.planning_stats()),
         navigation: snapshot.game.traversal().and_then(|t| t.navigation_stats()),
         discovery: snapshot.game.traversal().and_then(|t| t.discovery_stats()),
+        trajectory: snapshot.game.traversal().and_then(|t| t.trajectory_stats()),
         actors: snapshot
             .game
             .traversal()

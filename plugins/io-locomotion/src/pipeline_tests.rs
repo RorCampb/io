@@ -53,6 +53,12 @@ struct Counted<'a> {
     queries: Cell<u64>,
 }
 impl WorldView for Counted<'_> {
+    fn changes(&self) -> Option<&ChangeLog> {
+        Some(self.world.changes())
+    }
+    fn navigation_revision(&self) -> u64 {
+        self.world.navigation_revision()
+    }
     fn space(&self) -> &Space {
         self.world.space()
     }
@@ -81,6 +87,131 @@ impl WorldView for Counted<'_> {
     fn physics_error(&self) -> Option<&str> {
         self.world.physics_error()
     }
+}
+
+#[test]
+fn planner_connection_hands_geometry_to_actor_check_in_one_query() {
+    use crate::surface::{Action, MovementProfile, SurfaceRoutes};
+    use io_traversal::navigation::{Cell as GridCell, Domain, Location, RouteProvider, Stats};
+    let mut world = fixture();
+    let profile = MovementProfile {
+        radius: shape().radius,
+        max_slope: shape().max_slope,
+        standing_height: shape().height,
+        crouch_height: Some(1.1),
+        walk_speed: 3.,
+        crouch_speed: 1.,
+    };
+    let mut provider = SurfaceRoutes::new(Domain {
+        origin: [0., 0., 0.],
+        size: [12., 12.],
+        cell_size: 1.,
+    })
+    .unwrap();
+    let from = provider.connectors(&world, profile, Vec3::new(1., 1., 0.), GridCell(1, 1))[0].0;
+    let from = Location {
+        node: from.node,
+        position: from.position,
+    };
+    let counted = Counted {
+        world: &world,
+        queries: Cell::new(0),
+    };
+    let edges = provider.neighbors(&counted, profile, from, &mut Stats::default());
+    let edge = edges
+        .iter()
+        .find(|e| {
+            e.action == Action::Walk
+                && e.destination.position.x == 2.
+                && e.destination.position.y == 1.
+        })
+        .unwrap_or_else(|| panic!("{edges:?}"));
+    counted.queries.set(0);
+    assert!(provider.connection_clear(&counted, profile, Some(99), from, edge));
+    assert_eq!(
+        counted.queries.get(),
+        1,
+        "only transient actor query remains"
+    );
+    counted.queries.set(0);
+    assert!(provider.live_clear(
+        &counted,
+        profile,
+        Some(99),
+        from.position,
+        edge.destination.position,
+        edge.action
+    ));
+    assert!(counted.queries.get() > 10, "legacy call retraces scenery");
+
+    assert!(world.set_pose(100, Vec3::new(1.5, 1., 0.), 0.));
+    let counted = Counted {
+        world: &world,
+        queries: Cell::new(0),
+    };
+    assert!(!provider.connection_clear(&counted, profile, Some(99), from, edge));
+    assert_eq!(
+        counted.queries.get(),
+        1,
+        "actor changes do not require tracing unchanged scenery"
+    );
+    provider.invalidate();
+    counted.queries.set(0);
+    assert!(!provider.connection_clear(&counted, profile, Some(99), from, edge));
+    assert!(
+        counted.queries.get() > 1,
+        "eviction falls back to complete validation"
+    );
+}
+
+#[test]
+fn cached_scenery_proof_rejects_wrong_world_body_path_or_revision() {
+    let mut world = fixture();
+    let mut scratch = Vec::new();
+    let start = Vec3::default();
+    let end = Vec3::new(3., 0., 0.);
+    let path = SupportStage
+        .run(WalkRequest {
+            world: &world,
+            actor: None,
+            start,
+            delta: end,
+            shape: shape(),
+            scratch: &mut scratch,
+        })
+        .unwrap();
+    let end = path.walk().position;
+    let proof = path.scenery_path();
+    assert_eq!(
+        proof.clear(&world, Some(99), start, end, shape()),
+        Some(true)
+    );
+    assert_eq!(proof.clear(&fixture(), Some(99), start, end, shape()), None);
+    assert_eq!(
+        proof.clear(&world, Some(99), Vec3::new(0.1, 0., 0.), end, shape()),
+        None
+    );
+    assert_eq!(
+        proof.clear(&world, Some(99), start, Vec3::new(4., 0., 0.), shape()),
+        None
+    );
+    assert_eq!(
+        proof.clear(
+            &world,
+            Some(99),
+            start,
+            end,
+            CharacterBody {
+                height: 2.5,
+                ..shape()
+            }
+        ),
+        None
+    );
+    let old = world.snapshot();
+    world.set_terrain(HeightField::new([-20., -20.], 40., 2, 2, vec![1.; 4]).unwrap());
+    assert_eq!(proof.clear(&world, Some(99), start, end, shape()), None);
+    assert_eq!(proof.clear(&old, Some(99), start, end, shape()), Some(true));
 }
 
 // Retain the exact former double-walk as an independent comparison, not production fallback.

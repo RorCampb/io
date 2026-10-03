@@ -93,6 +93,7 @@ def main():
                            "prepare_p95_ms": data["prepare_p95_ms"], "actors": data["actors"],
                                    "planning": data.get("planning")}
                 summary["discovery"] = data.get("discovery")
+                summary["trajectory"] = data.get("trajectory")
                 if "movers" in data:
                     distances = [a["travel"]["distance"] for a in data["actors"]]
                     summary.update(npcs_moved=sum(d > 1 for d in distances),

@@ -284,6 +284,10 @@ impl<P: RouteProvider> Navigation<P> {
     pub fn stats(&self) -> Stats {
         self.stats
     }
+    /// Account for a plugin-owned prepared steering check instead of a boolean query.
+    pub fn record_steering_query(&mut self) {
+        self.stats.steering_queries += 1;
+    }
     pub(crate) fn add_stats(&mut self, s: Stats) {
         self.stats.expanded += s.expanded;
         self.stats.clearance_queries += s.clearance_queries;
@@ -515,13 +519,12 @@ impl<P: RouteProvider> Navigation<P> {
                             && approach > 0.
                             && distance(edge.destination.position, search.last.position)
                                 <= approach)
-                        && !self.provider.live_clear(
+                        && !self.provider.connection_clear(
                             world,
                             agent.profile,
                             agent.actor,
-                            from.position,
-                            edge.destination.position,
-                            edge.action,
+                            from,
+                            &edge,
                         )
                     {
                         search.transient_blocker = true;

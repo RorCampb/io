@@ -4,7 +4,7 @@ use io_game::PluginWorld;
 use io_locomotion as locomotion;
 use io_traversal::navigation::{Domain, Stats};
 use io_traversal::{NavigationError, NavigationRequest, NavigationTicket};
-use io_types::Envelope;
+use io_types::{Envelope, Vec3};
 use io_world::WorldView;
 
 #[derive(Clone, Debug)]
@@ -103,6 +103,31 @@ impl TraversalService {
             Self::Surface(m) => m.route(actor).is_some_and(|r| !r.is_empty()),
             Self::Athletics(m) => m.route(actor).is_some_and(|r| !r.is_empty()),
         }
+    }
+    pub fn local_trajectory(&self, actor: u64) -> Vec<Vec3> {
+        match self {
+            Self::Surface(m) => m
+                .executor(actor)
+                .map_or_else(Vec::new, |e| e.local_trajectory().to_vec()),
+            Self::Athletics(_) => vec![],
+        }
+    }
+    pub fn trajectory_stats(&self) -> io_locomotion::trajectory::TrajectoryStats {
+        let mut sum = io_locomotion::trajectory::TrajectoryStats::default();
+        if let Self::Surface(m) = self {
+            for actor in m.actors() {
+                if let Some(e) = m.executor(actor.ticket.actor) {
+                    let s = e.trajectory_stats();
+                    sum.proposals += s.proposals;
+                    sum.checks += s.checks;
+                    sum.accepted += s.accepted;
+                    sum.rejected += s.rejected;
+                    sum.completed += s.completed;
+                    sum.anticipations += s.anticipations;
+                }
+            }
+        }
+        sum
     }
     pub fn validate(&self, w: &dyn WorldView) -> Result<(), Error> {
         match self {

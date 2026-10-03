@@ -529,7 +529,8 @@ static void check_attention(void){
         IoFrame frame;assert(io_app_frame(app,1,&frame));
         assert(io_app_game_view(app,&game));assert(game.meter_count==2);
         for(unsigned int i=0;i<2;i++)assert(isfinite(game.meters[i].value)&&game.meters[i].value>=0.f&&game.meters[i].value<=1.f);
-        assert(game.meters[0].x==game.meters[1].x && game.meters[1].y-game.meters[0].y==32.f);
+        assert(game.meters[0].x==game.meters[1].x);
+        assert(fabsf(game.meters[1].y-game.meters[0].y-game.meters[0].width*.24f)<.001f);
         float focus=game.meters[1].value,attention=game.meters[0].value;
         peak_focus=fmaxf(peak_focus,focus);
         assert(attention<=peak_focus+1e-6f);
@@ -541,7 +542,7 @@ static void check_attention(void){
             glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
             capture_camera(step==60?"attention-visible":step==240?"attention-covered":"attention-return",pixels);
             const IoWorldMeter *meter=&game.meters[0];
-            int x=(int)(meter->x-98.f),y=799-(int)(meter->y+18.f);
+            int x=(int)(meter->x-meter->width*.42f),y=799-(int)(meter->y+meter->width*.175f);
             assert(x>=0&&x<1280&&y>=0&&y<800);
             const unsigned char *pixel=pixels+(y*1280+x)*4;
             if(attention>.05f)assert(pixel[0]>200 && pixel[1]>150 && pixel[2]<100);
@@ -632,6 +633,28 @@ static void check_pursuit(void){
     puts("PASS: cat-and-mouse arena renders, patrol/chase/tag HUD and player escape movement");
 }
 
+static void check_reaction_meters(void){
+    IoApp *app=io_app_new();assert(app);
+    Renderer r;assert(renderer_init(&r));assert(renderer_resize(&r,1280,800,1280,800));
+    unsigned char *pixels=malloc(1280*800*4);assert(pixels);
+    for(int i=0;i<600;i++)io_app_update(app,1.f/60.f);
+    IoFrame frame;assert(io_app_frame(app,1,&frame));
+    IoGameView game;assert(io_app_game_view(app,&game));assert(game.meter_count==6);
+    for(unsigned int i=0;i<6;i++)assert(game.meters[i].width>5.f);
+    assert(game.meters[0].label[0]=='E'&&game.meters[1].label[0]=='A');
+    assert(renderer_draw(&r,&frame));hud_set_game(&r.hud,&game);assert(renderer_draw_hud(&r));
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);capture_camera("reactions",pixels);
+    float original=game.meters[0].width;
+    assert(io_app_dispatch(app,(IoAction){IO_ACTION_ZOOM,-4.f,0.f,0}));io_app_update(app,0.f);
+    assert(io_app_game_view(app,&game));assert(game.meter_count==6);
+    assert(game.meters[0].width<original);
+    assert(io_app_frame(app,1,&frame));assert(renderer_draw(&r,&frame));
+    hud_set_game(&r.hud,&game);assert(renderer_draw_hud(&r));
+    glReadPixels(0,0,1280,800,GL_RGBA,GL_UNSIGNED_BYTE,pixels);capture_camera("reactions-wide",pixels);
+    free(pixels);renderer_destroy(&r);io_app_free(app);
+    puts("PASS: per-NPC evidence/attention meters scale with world zoom");
+}
+
 int main(int argc,char **argv) {
     bool variants=argc==2 && strcmp(argv[1],"--variants")==0;
     bool game=argc==2 && strcmp(argv[1],"--game")==0;
@@ -640,12 +663,14 @@ int main(int argc,char **argv) {
     bool editor=argc==2 && strcmp(argv[1],"--editor")==0;
     bool attention=argc==2 && strcmp(argv[1],"--attention")==0;
     bool pursuit=argc==2 && strcmp(argv[1],"--pursuit")==0;
+    bool reactions=argc==2 && strcmp(argv[1],"--reactions")==0;
     if(variants)assert(setenv("IO_SCENE","assets/street-kit/variants-demo.json",1)==0);
     if(game)assert(setenv("IO_SCENE","assets/game/encounter.json",1)==0);
     if(camera)assert(setenv("IO_SCENE","assets/camera/zoom.json",1)==0);
     if(dungeon||editor)assert(setenv("IO_SCENE","assets/dungeon/entry.json",1)==0);
     if(attention)assert(setenv("IO_SCENE","assets/dungeon/attention.json",1)==0);
     if(pursuit)assert(setenv("IO_SCENE","assets/dungeon/cat-mouse.json",1)==0);
+    if(reactions)assert(setenv("IO_SCENE","assets/dungeon/reactions.json",1)==0);
     assert(SDL_Init(SDL_INIT_VIDEO)==0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
@@ -658,7 +683,8 @@ int main(int argc,char **argv) {
     SDL_GLContext context=SDL_GL_CreateContext(window);
     assert(context && SDL_GL_MakeCurrent(window,context)==0);
     if(!camera && !dungeon && !editor && !attention && !pursuit)check_hud();
-    if(pursuit)check_pursuit();
+    if(reactions)check_reaction_meters();
+    else if(pursuit)check_pursuit();
     else if(attention)check_attention();
     else if(editor)check_editor();
     else if(dungeon)check_dungeon();

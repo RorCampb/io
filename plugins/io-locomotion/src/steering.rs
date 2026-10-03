@@ -6,6 +6,7 @@ use serde::Deserialize;
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SteeringSettings {
+    pub trajectory: Option<crate::trajectory::TrajectorySettings>,
     /// Route shortcut horizon, in meters.
     pub look_ahead: f32,
     /// Maximum velocity change in meters per second squared.
@@ -17,6 +18,7 @@ pub struct SteeringSettings {
 impl Default for SteeringSettings {
     fn default() -> Self {
         Self {
+            trajectory: None,
             look_ahead: 3.,
             acceleration: 9.,
             braking: 14.,
@@ -26,6 +28,9 @@ impl Default for SteeringSettings {
 }
 impl SteeringSettings {
     pub fn validate(self) -> Result<(), &'static str> {
+        if let Some(settings) = self.trajectory {
+            settings.validate()?;
+        }
         if !self.look_ahead.is_finite()
             || !(0.2..=6.).contains(&self.look_ahead)
             || !self.acceleration.is_finite()

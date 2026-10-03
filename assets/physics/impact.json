@@ -1,0 +1,3625 @@
+{
+  "version": 1,
+  "dimensions": [
+    1000,
+    1000,
+    1000
+  ],
+  "origin": [
+    100,
+    100,
+    0
+  ],
+  "camera": {
+    "target": [
+      0,
+      -2,
+      2
+    ],
+    "zoom": 1.5,
+    "render_distance": 120
+  },
+  "physics": {
+    "gravity": [
+      0,
+      0,
+      -9.81
+    ],
+    "substeps": 4,
+    "iterations": 12
+  },
+  "assets": [
+    {
+      "name": "box",
+      "builtin": "box"
+    },
+    {
+      "name": "runner",
+      "file": "../street-kit/runner.glb"
+    }
+  ],
+  "items": [
+    {
+      "name": "ground",
+      "asset": "box",
+      "position": [
+        -50,
+        -40,
+        -1
+      ],
+      "scale": [
+        100,
+        80,
+        1
+      ],
+      "tint": [
+        0.16,
+        0.19,
+        0.23
+      ],
+      "physics_body": {
+        "type": "static"
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            50.0,
+            40.0,
+            0.5
+          ]
+        },
+        "offset": [
+          50.0,
+          40.0,
+          0.5
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-0",
+      "asset": "box",
+      "position": [
+        -7.812,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5085749147249744,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-1",
+      "asset": "box",
+      "position": [
+        -6.51,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.4826273760886753,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-2",
+      "asset": "box",
+      "position": [
+        -5.208,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5576401709559781,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-3",
+      "asset": "box",
+      "position": [
+        -3.906,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.47086544300013145,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-4",
+      "asset": "box",
+      "position": [
+        -2.604,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5403823006460033,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-5",
+      "asset": "box",
+      "position": [
+        -1.3020000000000005,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5148533375368879,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-6",
+      "asset": "box",
+      "position": [
+        0.0,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.468699838716206,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-7",
+      "asset": "box",
+      "position": [
+        1.3020000000000005,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5361153599784131,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-8",
+      "asset": "box",
+      "position": [
+        2.604,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.46562434876629777,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-9",
+      "asset": "box",
+      "position": [
+        3.9059999999999997,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5250468525493579,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-10",
+      "asset": "box",
+      "position": [
+        5.207999999999999,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.47047831353619285,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-0-11",
+      "asset": "box",
+      "position": [
+        6.510000000000001,
+        0,
+        0.0
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.47360695200157976,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-0",
+      "asset": "box",
+      "position": [
+        -7.812,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5236778783713771,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-1",
+      "asset": "box",
+      "position": [
+        -6.51,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5840278187008057,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-2",
+      "asset": "box",
+      "position": [
+        -5.208,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.47857029417244684,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-3",
+      "asset": "box",
+      "position": [
+        -3.906,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.4934858446910522,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-4",
+      "asset": "box",
+      "position": [
+        -2.604,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5541149833608384,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-5",
+      "asset": "box",
+      "position": [
+        -1.3020000000000005,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.6021563413685509,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-6",
+      "asset": "box",
+      "position": [
+        0.0,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5465654422926248,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-7",
+      "asset": "box",
+      "position": [
+        1.3020000000000005,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.519502071197617,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-8",
+      "asset": "box",
+      "position": [
+        2.604,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.606438265838938,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-9",
+      "asset": "box",
+      "position": [
+        3.9059999999999997,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.4669874020926635,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-10",
+      "asset": "box",
+      "position": [
+        5.207999999999999,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.588770268857302,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-1-11",
+      "asset": "box",
+      "position": [
+        6.510000000000001,
+        0,
+        0.802
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5034413929497514,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-0",
+      "asset": "box",
+      "position": [
+        -7.812,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.48163826250361563,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-1",
+      "asset": "box",
+      "position": [
+        -6.51,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.4776688357117553,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-2",
+      "asset": "box",
+      "position": [
+        -5.208,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5062722736152901,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-3",
+      "asset": "box",
+      "position": [
+        -3.906,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5824189538680047,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-4",
+      "asset": "box",
+      "position": [
+        -2.604,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.48710895698859064,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-5",
+      "asset": "box",
+      "position": [
+        -1.3020000000000005,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5472400245493699,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-6",
+      "asset": "box",
+      "position": [
+        0.0,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5558370203389276,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-7",
+      "asset": "box",
+      "position": [
+        1.3020000000000005,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5158596314088597,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-8",
+      "asset": "box",
+      "position": [
+        2.604,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5421616698564337,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-9",
+      "asset": "box",
+      "position": [
+        3.9059999999999997,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.4694183462459985,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-10",
+      "asset": "box",
+      "position": [
+        5.207999999999999,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.46894017549493494,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-2-11",
+      "asset": "box",
+      "position": [
+        6.510000000000001,
+        0,
+        1.604
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.490893806922899,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-0",
+      "asset": "box",
+      "position": [
+        -7.812,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5620599959772679,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-1",
+      "asset": "box",
+      "position": [
+        -6.51,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5241388458504105,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-2",
+      "asset": "box",
+      "position": [
+        -5.208,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5071220755565188,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-3",
+      "asset": "box",
+      "position": [
+        -3.906,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5478342795261458,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-4",
+      "asset": "box",
+      "position": [
+        -2.604,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5279776564556163,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-5",
+      "asset": "box",
+      "position": [
+        -1.3020000000000005,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5049650495295523,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-6",
+      "asset": "box",
+      "position": [
+        0.0,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5791569222283737,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-7",
+      "asset": "box",
+      "position": [
+        1.3020000000000005,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5648491650594357,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-8",
+      "asset": "box",
+      "position": [
+        2.604,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.496614476608323,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-9",
+      "asset": "box",
+      "position": [
+        3.9059999999999997,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5461635565388007,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-10",
+      "asset": "box",
+      "position": [
+        5.207999999999999,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5387794755717177,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-3-11",
+      "asset": "box",
+      "position": [
+        6.510000000000001,
+        0,
+        2.406
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5912706243360144,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-0",
+      "asset": "box",
+      "position": [
+        -7.812,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5694167934158827,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-1",
+      "asset": "box",
+      "position": [
+        -6.51,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.503190664733528,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-2",
+      "asset": "box",
+      "position": [
+        -5.208,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.6070262271238873,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-3",
+      "asset": "box",
+      "position": [
+        -3.906,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.47770986673824434,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-4",
+      "asset": "box",
+      "position": [
+        -2.604,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5227184232677841,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-5",
+      "asset": "box",
+      "position": [
+        -1.3020000000000005,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5735711394347874,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-6",
+      "asset": "box",
+      "position": [
+        0.0,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.48279768019907576,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-7",
+      "asset": "box",
+      "position": [
+        1.3020000000000005,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5333444650713709,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-8",
+      "asset": "box",
+      "position": [
+        2.604,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.4658810885571157,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-9",
+      "asset": "box",
+      "position": [
+        3.9059999999999997,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5602323784801593,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-10",
+      "asset": "box",
+      "position": [
+        5.207999999999999,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.574685629931922,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-4-11",
+      "asset": "box",
+      "position": [
+        6.510000000000001,
+        0,
+        3.208
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5459538910416076,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-0",
+      "asset": "box",
+      "position": [
+        -7.812,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5913216717746332,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-1",
+      "asset": "box",
+      "position": [
+        -6.51,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5070621269272145,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-2",
+      "asset": "box",
+      "position": [
+        -5.208,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5642943049410489,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-3",
+      "asset": "box",
+      "position": [
+        -3.906,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5491554815657528,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-4",
+      "asset": "box",
+      "position": [
+        -2.604,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5469842806423738,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-5",
+      "asset": "box",
+      "position": [
+        -1.3020000000000005,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.528430799695212,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-6",
+      "asset": "box",
+      "position": [
+        0.0,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5859951670768813,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-7",
+      "asset": "box",
+      "position": [
+        1.3020000000000005,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.6017021642661906,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-8",
+      "asset": "box",
+      "position": [
+        2.604,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5311147506129467,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-9",
+      "asset": "box",
+      "position": [
+        3.9059999999999997,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5596228308212012,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-10",
+      "asset": "box",
+      "position": [
+        5.207999999999999,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.469100414139583,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "block-5-11",
+      "asset": "box",
+      "position": [
+        6.510000000000001,
+        0,
+        4.01
+      ],
+      "scale": [
+        1.3,
+        1.2,
+        0.8
+      ],
+      "tint": [
+        0.72,
+        0.5652238031956636,
+        0.2
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 25
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.65,
+            0.6,
+            0.4
+          ]
+        },
+        "offset": [
+          0.65,
+          0.6,
+          0.4
+        ],
+        "friction": 0.7
+      }
+    },
+    {
+      "name": "projectile-0",
+      "asset": "runner",
+      "position": [
+        -2.25,
+        -12.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          0.08827731271660127,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-1",
+      "asset": "runner",
+      "position": [
+        -0.75,
+        -12.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          0.29585756367998045,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-2",
+      "asset": "runner",
+      "position": [
+        0.75,
+        -12.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          0.19315487196582892,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-3",
+      "asset": "runner",
+      "position": [
+        2.25,
+        -12.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.12924268074351045,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-4",
+      "asset": "runner",
+      "position": [
+        -2.25,
+        -14.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.06852513453197351,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-5",
+      "asset": "runner",
+      "position": [
+        -0.75,
+        -14.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          0.10119162953051292,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-6",
+      "asset": "runner",
+      "position": [
+        0.75,
+        -14.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.28646224316664687,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-7",
+      "asset": "runner",
+      "position": [
+        2.25,
+        -14.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.022982828220140472,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-8",
+      "asset": "runner",
+      "position": [
+        -2.25,
+        -17.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.19917097265607325,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-9",
+      "asset": "runner",
+      "position": [
+        -0.75,
+        -17.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.22974252331096084,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-10",
+      "asset": "runner",
+      "position": [
+        0.75,
+        -17.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.26462734840121377,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-11",
+      "asset": "runner",
+      "position": [
+        2.25,
+        -17.0,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          0.16093979308351242,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-12",
+      "asset": "runner",
+      "position": [
+        -2.25,
+        -19.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.22239586678878948,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-13",
+      "asset": "runner",
+      "position": [
+        -0.75,
+        -19.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.15143109978185143,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-14",
+      "asset": "runner",
+      "position": [
+        0.75,
+        -19.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          -0.06543017812006374,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    },
+    {
+      "name": "projectile-15",
+      "asset": "runner",
+      "position": [
+        2.25,
+        -19.5,
+        1
+      ],
+      "yaw_degrees": 180,
+      "tint": [
+        0.85,
+        0.94,
+        1
+      ],
+      "physics_body": {
+        "type": "dynamic",
+        "mass": 70,
+        "velocity": [
+          0.22285318447577968,
+          16,
+          4
+        ],
+        "angular_velocity": [
+          0.4,
+          0.2,
+          0.1
+        ]
+      },
+      "collider": {
+        "shape": {
+          "type": "box",
+          "half_extents": [
+            0.4,
+            0.3,
+            0.9
+          ]
+        },
+        "offset": [
+          0,
+          0,
+          0.9
+        ],
+        "friction": 0.5,
+        "restitution": 0.1
+      }
+    }
+  ]
+}

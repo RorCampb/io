@@ -748,11 +748,45 @@ impl App {
         use io_encounter::{AbilityEffect, CombatEvent, Phase};
         let game = self.game();
         if let Some(t) = game.traversal() {
+            let squad = t.battle_diagnostics();
+            if !squad.is_empty() {
+                let mut lines = vec![
+                    "DUNGEON SQUAD - DETECTION / PREPARATION / CHASE".into(),
+                    "WASD MOVE - SHIFT HIDE LOW - SPACE JUMP".into(),
+                    "TWO FINGERS ORBIT - PINCH ZOOM - ROUTES ON".into(),
+                ];
+                for npc in &squad {
+                    let attention = t
+                        .observations()
+                        .iter()
+                        .find(|o| o.observer() == npc.actor)
+                        .map_or(0., |o| o.attention() * 100.);
+                    let source = match npc.source {
+                        Some(io_playground::ObservationSource::Direct { .. }) => "SEEN",
+                        Some(io_playground::ObservationSource::Reported { .. }) => "RADIO",
+                        None => "NONE",
+                    };
+                    lines.push(format!(
+                        "{} {:?} A{:.0} {} {:.1}S",
+                        npc.label.to_uppercase(),
+                        npc.phase,
+                        attention,
+                        source,
+                        npc.age
+                    ));
+                }
+                lines.push(format!(
+                    "REPORTS {} - ATTACK READY ONLY / NO DAMAGE",
+                    t.battle_reports()
+                ));
+                lines.extend(t.battle_log());
+                return lines;
+            }
             if !t.observations().is_empty() {
                 let pursuit = t.pursuit_status();
                 let mut lines = vec![
                     if pursuit.is_empty() {
-                        "ATTENTION TEST - OBSERVER NAMED ON GOLD METER"
+                        "ATTENTION TEST - A ATTENTION - F FOCUS"
                     } else {
                         "CAT AND MOUSE - BREAK SIGHT AND EVADE"
                     }
@@ -883,6 +917,16 @@ impl App {
                     "NAV {} EXPANDED - {} CACHE HITS",
                     stats.expanded, stats.cache_hits
                 ));
+            }
+            if let Some(stats) = t.discovery_stats() {
+                lines[4] = format!(
+                    "METERS E/A - PLAYER SEEN BY {} NPCS",
+                    t.observers_noticing(t.player())
+                );
+                lines[5] = format!(
+                    "PREDICT {} - URGENT {} - REPLAN {}",
+                    stats.predicted_conflicts, stats.urgent_reactions, stats.predictive_replans
+                );
             }
             return lines;
         }
@@ -1374,6 +1418,13 @@ impl App {
             }
             view.world_revision = Some(self.world.revision());
             if !routes.is_empty() {
+                // Local executable suggestions are yellow; coarse routes retain cyan/orange.
+                for d in routes.iter().take(256) {
+                    for pair in d.local_trajectory.windows(2).take(24) {
+                        let lift = Vec3::new(0., 0., 0.18);
+                        view.frame.grid.extend([pair[0] + lift, pair[1] + lift]);
+                    }
+                }
                 let paths: Vec<_> = routes
                     .iter()
                     .map(|d| (d.feedback.execution.position, d.route.as_slice()))

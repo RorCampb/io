@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "dimensions": [100, 100, 20],
+  "origin": [50, 50, 0],
+  "camera": {"target": [50, 50.6, 0.7], "zoom": 6},
+  "assets": [
+    {"name": "character", "file": "runner.glb"},
+    {"name": "block", "builtin": "box"}
+  ],
+  "items": [
+    {
+      "name": "actor",
+      "asset": "character",
+      "position": [0, 0, 0],
+      "health": 40,
+      "on_death": {"clip": "Collapse"},
+      "animation": {
+        "clip": "Run",
+        "events": [
+          {
+            "name": "step",
+            "at": 0.5,
+            "target": "actor",
+            "effect": {"type": "damage", "amount": 10}
+          }
+        ]
+      }
+    },
+    {
+      "name": "practice-target",
+      "asset": "block",
+      "position": [2.5, 0, 0],
+      "health": 40,
+      "tint": [0.8, 0.3, 0.1]
+    },
+    {
+      "name": "ground",
+      "asset": "block",
+      "position": [-3, -3, -0.16],
+      "scale": [7, 7, 0.16],
+      "tint": [0.3, 0.38, 0.34]
+    }
+  ]
+}

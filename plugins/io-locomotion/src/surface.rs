@@ -1,4 +1,6 @@
 //! Optional humanoid surface provider. Not required by the route search.
+use crate::pipeline::{SceneryPath, SupportStage, WalkRequest};
+use io_game::stage::Stage;
 use io_traversal::navigation::*;
 use io_types::Vec3;
 use io_world::WorldView;
@@ -85,11 +87,12 @@ pub(crate) struct Sample {
 }
 
 type EdgeKey = ([u32; 4], Node, Cell);
-type Connections = Vec<(Sample, Action)>;
+type Connections = Vec<(Sample, Action, SceneryPath)>;
 #[derive(Clone, Debug)]
 pub struct SurfaceRoutes {
     domain: Domain,
     edges: Arc<HashMap<EdgeKey, Connections>>,
+    cached_points: usize,
     stats: Stats,
 }
 impl SurfaceRoutes {
@@ -98,6 +101,7 @@ impl SurfaceRoutes {
         Ok(Self {
             domain,
             edges: Arc::default(),
+            cached_points: 0,
             stats: Stats::default(),
         })
     }
@@ -161,7 +165,6 @@ impl SurfaceRoutes {
         to: Cell,
     ) -> Connections {
         let target = self.domain.xy(to);
-        let scenery = Scenery(world);
         let mut result = Vec::new();
         for action in [Action::Walk, Action::Crouch] {
             if action == Action::Crouch && profile.crouch_height.is_none() {
@@ -169,15 +172,18 @@ impl SurfaceRoutes {
             }
             // Bounded support probes follow reachable geometry, never scan an
             // entire vertical column or snap to a disconnected upper surface.
-            let Ok(walk) = walk_character(
-                &scenery,
-                None,
-                from,
-                Vec3::new(target[0] - from.x, target[1] - from.y, 0.),
-                profile.shape(action),
-            ) else {
+            let mut scratch = Vec::new();
+            let Ok(path) = SupportStage.run(WalkRequest {
+                world,
+                actor: None,
+                start: from,
+                delta: Vec3::new(target[0] - from.x, target[1] - from.y, 0.),
+                shape: profile.shape(action),
+                scratch: &mut scratch,
+            }) else {
                 continue;
             };
+            let walk = path.walk();
             let Some(support) = walk.support.filter(|_| walk.reached) else {
                 continue;
             };
@@ -190,9 +196,9 @@ impl SurfaceRoutes {
             };
             if !result
                 .iter()
-                .any(|(s, _): &(Sample, Action)| s.node == sample.node)
+                .any(|(s, _, _): &(Sample, Action, SceneryPath)| s.node == sample.node)
             {
-                result.push((sample, action));
+                result.push((sample, action, path.scenery_path()));
             }
         }
         result
@@ -212,11 +218,20 @@ impl SurfaceRoutes {
         }
         self.stats.clearance_queries += 1;
         let value = self.connectors(world, profile, a.position, b);
+        let points = value
+            .iter()
+            .map(|(_, _, path)| path.point_count())
+            .sum::<usize>();
         // Bounded memoization; eviction only loses optimization, never validity.
-        if self.edges.len() >= 262_144 {
+        // Recorded paths have their own ~12 MiB coordinate budget.
+        if self.edges.len() >= 262_144 || self.cached_points + points > 1_048_576 {
             self.edges = Arc::default();
+            self.cached_points = 0;
         }
-        Arc::make_mut(&mut self.edges).insert(key, value.clone());
+        if points <= 1_048_576 {
+            self.cached_points += points;
+            Arc::make_mut(&mut self.edges).insert(key, value.clone());
+        }
         value
     }
     fn endpoints(
@@ -251,11 +266,16 @@ impl SurfaceRoutes {
         });
         let mut failure = Failure::Unreachable;
         for a in candidates {
-            for (sample, action) in self.connectors(world, profile, start, a) {
+            for (sample, action, path) in self.connectors(world, profile, start, a) {
                 let point = sample.position;
-                if actor.is_some_and(|id| {
-                    !live_supported_segment(world, id, profile.shape(action), start, point)
-                }) {
+                if !path
+                    .clear(world, actor, start, point, profile.shape(action))
+                    .unwrap_or_else(|| {
+                        actor.is_none_or(|id| {
+                            live_supported_segment(world, id, profile.shape(action), start, point)
+                        })
+                    })
+                {
                     failure = Failure::Blocked;
                     continue;
                 }
@@ -286,7 +306,7 @@ impl SurfaceRoutes {
     ) -> Result<(Node, Waypoint), Failure> {
         let cell = self.domain.cell(goal).ok_or(Failure::Unreachable)?;
         let mut failure = Failure::Unreachable;
-        for (sample, _) in self.connectors(world, profile, goal, cell) {
+        for (sample, _, _) in self.connectors(world, profile, goal, cell) {
             let point = sample.position;
             let Some(action) = connection(world, profile, point, goal) else {
                 continue;
@@ -324,6 +344,7 @@ impl RouteProvider for SurfaceRoutes {
     }
     fn invalidate(&mut self) {
         self.edges = Arc::default();
+        self.cached_points = 0;
     }
     fn route_validity(&self) -> RouteValidity {
         RouteValidity::LiveChecked
@@ -374,7 +395,7 @@ impl RouteProvider for SurfaceRoutes {
             if cell.0 < 0 || cell.1 < 0 || cell.0 >= width || cell.1 >= height {
                 continue;
             }
-            for (sample, action) in self.edge(
+            for (sample, action, _) in self.edge(
                 w,
                 p,
                 Sample {
@@ -421,6 +442,42 @@ impl RouteProvider for SurfaceRoutes {
         action: Action,
     ) -> bool {
         actor.is_none_or(|id| live_supported_segment(w, id, p.shape(action), a, b))
+    }
+    fn connection_clear(
+        &self,
+        world: &dyn WorldView,
+        profile: MovementProfile,
+        actor: Option<u64>,
+        from: Location<Node>,
+        edge: &Connection<Node, Action>,
+    ) -> bool {
+        let key = (profile.key(), from.node, edge.destination.node.cell);
+        self.edges
+            .get(&key)
+            .and_then(|paths| {
+                paths.iter().find(|(s, action, _)| {
+                    s.node == edge.destination.node && *action == edge.action
+                })
+            })
+            .and_then(|(_, _, path)| {
+                path.clear(
+                    world,
+                    actor,
+                    from.position,
+                    edge.destination.position,
+                    profile.shape(edge.action),
+                )
+            })
+            .unwrap_or_else(|| {
+                self.live_clear(
+                    world,
+                    profile,
+                    actor,
+                    from.position,
+                    edge.destination.position,
+                    edge.action,
+                )
+            })
     }
     fn automatic_completion(&self, _: Action) -> bool {
         true
@@ -492,7 +549,7 @@ impl RouteProvider for SurfaceRoutes {
         };
         self.connectors(w, p, point, cell)
             .into_iter()
-            .map(|(s, _)| s.node)
+            .map(|(s, _, _)| s.node)
             .collect()
     }
 }

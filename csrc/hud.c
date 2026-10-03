@@ -5,7 +5,7 @@
 #include <string.h>
 
 typedef struct HudVertex {float x,y,u,v;uint32_t mask[2];float color[4];} HudVertex;
-enum { MAX_VERTICES=6*(2+HUD_LINE_COUNT*(HUD_LINE_LENGTH-1)+12*63+16*12+8*(32+4)) };
+enum { MAX_VERTICES=6*(2+HUD_LINE_COUNT*(HUD_LINE_LENGTH-1)+12*63+16*12+1024*(8+4)) };
 
 static const char *vertex_source=
     "#version 410 core\n"
@@ -196,23 +196,24 @@ bool hud_draw(Hud *h,int width,int height){
         float x=fmaxf(4.f,width-panel_width-12.f),y=12.f;
         const uint32_t full[2]={UINT32_MAX,7};const float bg[4]={0.025f,0.04f,0.05f,0.90f};
         const float white[4]={0.94f,0.97f,1.f,1.f},yellow[4]={1.f,0.83f,0.2f,1.f},red[4]={1.f,0.38f,0.28f,1.f};
-        for(unsigned int i=0;i<h->game.meter_count && i<8;i++){
+        for(unsigned int i=0;i<h->game.meter_count && i<1024;i++){
             const IoWorldMeter *m=&h->game.meters[i];
-            if(!isfinite(m->x)||!isfinite(m->y)||!isfinite(m->value) ||
-                m->x<0.f||m->x>width||m->y+28.f<0.f||m->y>height)continue;
-            float value=fminf(1.f,fmaxf(0.f,m->value)),left=m->x-108.f;
+            if(!isfinite(m->x)||!isfinite(m->y)||!isfinite(m->value)||!isfinite(m->width)||m->width<5.f ||
+                m->x<0.f||m->x>width||m->y+m->width*.22f<0.f||m->y>height)continue;
+            float value=fminf(1.f,fmaxf(0.f,m->value)),left=m->x-m->width*.5f;
+            float unit=m->width/60.f;
             float ink[4]={0,0,0,1};
             for(int c=0;c<3;c++)ink[c]=isfinite(m->color[c])?fminf(1.f,fmaxf(0.f,m->color[c])):1.f;
             const float track[4]={0.17f,0.22f,0.25f,1.f};
-            quad(vertices,&count,left,m->y,216.f,28.f,full,bg);
-            char text[33];snprintf(text,sizeof(text),"%.23s %.0f%%",m->label,value*100.f);
-            for(size_t j=0;j<strlen(text);j++){
+            quad(vertices,&count,left,m->y,m->width,13.f*unit,full,bg);
+            char kind=strstr(m->label,"ATTENTION")?'A':m->label[0];
+            char text[9];snprintf(text,sizeof(text),"%c %.0f%%",kind,value*100.f);
+            for(size_t j=0;j<strlen(text)&&m->width>=60.f;j++){
                 uint32_t bits[2];glyph(text[j],bits);
-                quad(vertices,&count,left+8.f+j*6.f,m->y+4.f,5.f,7.f,bits,white);
+                quad(vertices,&count,left+(3.f+j*6.f)*unit,m->y+unit,5.f*unit,7.f*unit,bits,white);
             }
-            quad(vertices,&count,left+8.f,m->y+16.f,200.f,6.f,full,track);
-            quad(vertices,&count,left+8.f,m->y+16.f,200.f*value,6.f,full,ink);
-            quad(vertices,&count,left+6.f+200.f*value,m->y+14.f,4.f,10.f,full,ink);
+            quad(vertices,&count,left+3.f*unit,m->y+9.f*unit,54.f*unit,3.f*unit,full,track);
+            quad(vertices,&count,left+3.f*unit,m->y+9.f*unit,54.f*unit*value,3.f*unit,full,ink);
         }
         for(unsigned int i=0;i<h->game.damage_count && i<16;i++){
             IoDamageText hit=h->game.damage[i];

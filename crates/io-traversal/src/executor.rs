@@ -8,6 +8,8 @@ use std::fmt::Debug;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Progress {
     Running,
+    /// Ask for a replacement while retaining the currently executable route.
+    Reconsider,
     Complete,
     Blocked,
     Failed,
@@ -34,6 +36,9 @@ pub trait TraversalExecutor: Clone + Debug + Send + Sync + 'static {
     ) -> Result<<Self::Routes as RouteProvider>::Profile, Error>;
     fn feedback(&self, world: &dyn WorldView) -> Result<Self::Feedback, Error>;
     fn cancel(&mut self);
+    /// Optional plugin response to a leased navigation hint. The engine assigns
+    /// no movement semantics; Routine clears an expired or replaced hint.
+    fn navigation_priority(&mut self, _priority: crate::NavigationPriority) {}
     /// Called for a newly selected target/action, before execute. Continuous
     /// look-ahead targets can change frequently; only hold action-specific state here.
     fn begin<E>(

@@ -5,7 +5,7 @@ use crate::{
         Agent, Navigation, RefineProgress, RefineRequest, RouteProvider, RouteRefinement, Stats,
         Status,
     },
-    NavigationGoal, NavigationTicket,
+    NavigationGoal, NavigationPriority, NavigationTicket,
 };
 use io_game::stage::Stage;
 use io_types::Vec3;
@@ -15,7 +15,7 @@ use std::{
     collections::{BTreeMap, VecDeque},
     fmt,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         mpsc::{self, Receiver, SyncSender, TrySendError},
         Arc, Mutex,
     },
@@ -25,6 +25,41 @@ use std::{
 
 const CAPACITY: usize = 32;
 const MAX_EXPANSIONS: u64 = 65_536;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AdmissionOrder {
+    routine: usize,
+    urgent: usize,
+}
+impl AdmissionOrder {
+    pub fn select(
+        &mut self,
+        count: usize,
+        tick: u64,
+        priority: impl Fn(usize) -> NavigationPriority,
+    ) -> usize {
+        if count == 0 {
+            return 0;
+        }
+        if tick % 4 == 0 || (0..count).all(|i| priority(i) == NavigationPriority::Routine) {
+            let selected = self.routine;
+            self.routine = (self.routine + 1) % count;
+            selected
+        } else {
+            let selected = (0..count)
+                .map(|n| (self.urgent + n) % count)
+                .max_by_key(|&i| {
+                    (
+                        priority(i),
+                        std::cmp::Reverse((i + count - self.urgent) % count),
+                    )
+                })
+                .unwrap();
+            self.urgent = (selected + 1) % count;
+            selected
+        }
+    }
+}
 
 /// Inline is useful for deterministic accelerated tests; Background never waits in a tick.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -37,6 +72,7 @@ pub enum PlanningMode {
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct PlanningStats {
+    pub priority_updates: u64,
     pub submitted: u64,
     pub completed: u64,
     pub accepted: u64,
@@ -63,6 +99,7 @@ pub(crate) struct PlanJob<P: RouteProvider> {
     pub world: Arc<WorldSnapshot>,
     pub familiar: Vec<Vec3>,
     pub horizon: f32,
+    pub priority: NavigationPriority,
 }
 pub(crate) struct PlanResult<P: RouteProvider> {
     pub key: PlanKey,
@@ -75,6 +112,7 @@ pub(crate) struct PlanResult<P: RouteProvider> {
 struct Work<P: RouteProvider> {
     job: PlanJob<P>,
     cancelled: Arc<AtomicBool>,
+    priority: Arc<AtomicU8>,
     approach: Approach,
     started: Instant,
     initialized: bool,
@@ -187,7 +225,7 @@ impl<P: RouteProvider> Drop for Runtime<P> {
 pub(crate) struct Planner<P: RouteProvider> {
     mode: PlanningMode,
     runtime: Option<Runtime<P>>,
-    inflight: BTreeMap<u64, (PlanKey, Arc<AtomicBool>)>,
+    inflight: BTreeMap<u64, (PlanKey, Arc<AtomicBool>, Arc<AtomicU8>)>,
     results: BTreeMap<u64, PlanResult<P>>,
     stats: PlanningStats,
 }
@@ -213,6 +251,13 @@ impl<P: RouteProvider> fmt::Debug for Planner<P> {
     }
 }
 impl<P: RouteProvider> Planner<P> {
+    pub fn prioritize(&mut self, actor: u64, priority: NavigationPriority) {
+        if let Some((_, _, value)) = self.inflight.get(&actor) {
+            if value.swap(priority as u8, Ordering::Relaxed) != priority as u8 {
+                self.stats.priority_updates += 1;
+            }
+        }
+    }
     pub fn new(mode: PlanningMode) -> Self {
         Self {
             mode,
@@ -244,7 +289,7 @@ impl<P: RouteProvider> Planner<P> {
             .is_some_and(|v| v.0 == key)
     }
     pub fn cancel(&mut self, actor: u64) {
-        if let Some((_, flag)) = self.inflight.remove(&actor) {
+        if let Some((_, flag, _)) = self.inflight.remove(&actor) {
             flag.store(true, Ordering::Release);
             self.stats.cancelled += 1;
         }
@@ -281,9 +326,11 @@ impl<P: RouteProvider> Planner<P> {
         self.cancel(job.key.ticket.actor);
         let key = job.key;
         let cancelled = Arc::new(AtomicBool::new(false));
+        let priority = Arc::new(AtomicU8::new(job.priority as u8));
         let work = Work {
             job,
             cancelled: cancelled.clone(),
+            priority: priority.clone(),
             approach: Approach::default(),
             started: Instant::now(),
             initialized: false,
@@ -295,7 +342,8 @@ impl<P: RouteProvider> Planner<P> {
         };
         match self.runtime.as_ref().unwrap().send.try_send(work) {
             Ok(()) => {
-                self.inflight.insert(key.ticket.actor, (key, cancelled));
+                self.inflight
+                    .insert(key.ticket.actor, (key, cancelled, priority));
                 self.stats.submitted += 1;
                 self.stats.pending = self.inflight.len();
                 Ok(true)
@@ -352,6 +400,7 @@ fn run<P: RouteProvider>(
     stop: Arc<AtomicBool>,
 ) {
     let mut work = VecDeque::<Work<P>>::new();
+    let mut slice = 0_u64;
     while !stop.load(Ordering::Acquire) {
         work.retain(|w| !w.cancelled.load(Ordering::Acquire));
         for w in receive.try_iter().take(CAPACITY) {
@@ -359,7 +408,12 @@ fn run<P: RouteProvider>(
                 work.push_back(w);
             }
         }
-        let Some(mut next) = work.pop_front() else {
+        let index = priority_index(
+            work.iter().map(|w| w.priority.load(Ordering::Relaxed)),
+            slice,
+        );
+        slice = slice.wrapping_add(1);
+        let Some(mut next) = work.remove(index) else {
             match receive.recv_timeout(Duration::from_millis(2)) {
                 Ok(w) => work.push_back(w),
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -411,4 +465,14 @@ fn run<P: RouteProvider>(
         }
         work.push_back(next);
     }
+}
+
+fn priority_index(priorities: impl Iterator<Item = u8>, slice: u64) -> usize {
+    if slice % 4 == 0 {
+        return 0;
+    }
+    priorities
+        .enumerate()
+        .max_by_key(|&(i, p)| (p, std::cmp::Reverse(i)))
+        .map_or(0, |(i, _)| i)
 }

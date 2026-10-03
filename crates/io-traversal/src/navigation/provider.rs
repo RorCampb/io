@@ -103,6 +103,26 @@ pub trait RouteProvider: Clone + Debug + Send + Sync + 'static {
         to: Vec3,
         action: Self::Action,
     ) -> bool;
+    /// Check transient constraints on a connection returned by `neighbors` for
+    /// this world/profile/source. Providers may reuse its geometry evidence.
+    /// The default preserves existing plugins' complete validation behavior.
+    fn connection_clear(
+        &self,
+        world: &dyn WorldView,
+        profile: Self::Profile,
+        actor: Option<u64>,
+        from: Location<Self::Node>,
+        edge: &Connection<Self::Node, Self::Action>,
+    ) -> bool {
+        self.live_clear(
+            world,
+            profile,
+            actor,
+            from.position,
+            edge.destination.position,
+            edge.action,
+        )
+    }
     /// Opt in only for continuous travel whose completion is positional.
     /// Discrete plugin actions require explicit executor acknowledgement.
     fn automatic_completion(&self, _action: Self::Action) -> bool {

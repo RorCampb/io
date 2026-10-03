@@ -235,3 +235,182 @@ Dynamic discovery and route reconsideration are enabled in `stress-128.json`;
 other existing saved stress scenes retain their earlier settings. Short-term
 attention is not knowledge-restricted path search, and this does not solve
 acceleration-aware corner smoothing or general crowd traffic.
+
+## Rolling Local Trajectories (2026-09-27)
+
+The locomotion plugin now optionally prepares short, sampled corner curves while
+retaining the existing coarse route and live movement checks. The 128-NPC scene
+enables this through `steering.trajectory`; other saved scenes remain unchanged.
+See [movement stages](movement-stages.md) for settings, safety and scope.
+
+Two initial thirty-second baselines are retained in `build/trajectory-before`.
+Their p95 tick times varied substantially (10.957 / 5.183 ms), so the comparison
+below instead uses two off/on runs of the same final binary. Archived baseline
+inputs were replayed for the control; enabled inputs differ only in the per-NPC
+steering opt-in. Geometry, goals, speeds and the 144 Hz target are unchanged.
+No compilation or other benchmark ran concurrently.
+
+| Metric | Trajectories off (two runs) | Trajectories on (two runs) |
+| --- | --- | --- |
+| Simulation p50 (ms) | 4.277 / 4.360 | 4.678 / 4.654 |
+| Simulation p95 (ms) | 6.856 / 7.660 | 5.811 / 5.971 |
+| Simulation p99 (ms) | 9.648 / 10.258 | 6.588 / 7.541 |
+| Maximum tick (ms) | 16.913 / 14.887 | 10.575 / 27.562 |
+| Completed ticks | 4263 / 4245 | 4305 / 4297 |
+| Overruns | 199 / 219 | 56 / 122 |
+| NPC distance total (m) | 6855 / 6991 | 6795 / 6754 |
+| Moving actor-time | 67.3% / 68.7% | 64.4% / 64.4% |
+| Actors moving over 1m | 128 / 128 | 128 / 128 |
+| End stationary over 5s | 1 / 0 | 0 / 5 |
+| Route jobs submitted | 365 / 364 | 379 / 375 |
+| Completed local corners | 0 / 0 | 81 / 53 |
+| Early reconsiderations | 0 / 0 | 17 / 16 |
+
+Median tick cost increased about 0.35 ms (8%); average total travel decreased
+about 2.2%. Lower tail times are **not an equal-work speedup**: trajectories,
+speed preferences, replans and fixture timing change the executed workload.
+Initial queue waits still reached roughly 9.6-9.8 seconds. This is not a general
+crowd-planning or queue-latency fix. These CPU probes poll at 60 Hz, sampling the
+144 Hz worker; they are neither a complete tick trace nor GPU FPS measurements.
+
+Enabled runs recorded 139 / 98 curve proposals, 99 / 67 accepted curves and
+40 / 28 rejections. Aggregate checks (sample chords plus forward feasibility
+previews) numbered 13,663 / 13,286. The stage permits at most one short curve
+validation and one due preview per actor invocation; actual movement retains
+its independent live collision/support validation. Preview geometry does not
+constitute an attention observation or change perception memory.
+
+Final inputs, hashes and raw runs: `build/trajectory-final-control` and
+`build/trajectory-final`; executable: `build/trajectory-final-probe`. The initial
+baseline and intermediate `build/trajectory-trial` remain available.
+
+Verification: 380 Rust tests pass (three existing ignored), strict workspace
+Clippy and seven stress-generator Python tests pass. Regression tests exercise
+30/60/144 Hz movement, bounded stage checks, velocity continuity, collision-safe
+arrival, early reconsideration without canceling the accepted route, and invalid
+external strategies. The release native application was rebuilt and a 14-second
+scene capture rendered successfully; its synchronous capture is not a runtime
+performance benchmark. Local yellow traces supplement the existing coarse
+cyan/orange routes. Smooth trajectories currently cover level same-action
+corners, not stairs/jumps or general obstacle-detour search; animation cadence
+is unchanged.
+
+## Observed Moving-Obstacle Urgency (2026-09-27)
+
+### Larger Crowd Follow-Up
+
+`build/crowd-384` contains a paced sixty-second run of the later dense scene:
+384 NPCs, 192 extra obstacles, and six character plus six scenery observation
+slots per NPC. This is a larger workload, **not** an equal-input optimization
+comparison. Simulation target remains 144 Hz.
+
+- Completed 3,934 ticks in about 60 seconds: approximately 65.6 actual SIM Hz,
+  or 27.3 simulated seconds under the existing fixed-step overrun policy.
+- Sampled simulation p50/p95/p99: 15.43 / 17.18 / 17.85 ms; max 21.45 ms.
+  Every completed tick exceeded the 6.94 ms target budget. Rendering FPS is not
+  measured by this CPU probe.
+- 328/384 actors moved over a metre; 37.8% moving actor-time. 125 ended stationary
+  over five seconds; most stationary time was labelled Planning, not Following.
+  The 32-job queue ended full: 491 submitted, 436 accepted, zero cancelled.
+- About 496,000 character samples and 156,700 character notices were processed;
+  3,962 discovery tracks remained across scenery and characters. Character
+  notices do not trigger scenery route invalidation or urgency braking.
+
+This scene exposes simulation and initial-route throughput limits. Do not label
+it stable 144 Hz or solve its waits by silently reducing population or attention.
+392 Rust tests, 29 Python tests, strict Clippy and nine native OpenGL suites pass;
+spawn regressions check support and body clearance for all 384 actors.
+
+### Idempotent Height Updates (2026-09-27)
+
+A 20-second stack sample (`build/crowd-384-profile/stacks.txt`) attributed
+approximately 79% of simulation-thread samples to traversal execution and 14%
+to discovery/visibility. The motor checked body fit before calling a height
+setter that checked fit again and reindexed/published even unchanged dimensions.
+
+The setter now treats unchanged dimensions as a successful no-op; the motor
+requests a resize only when desired and actual heights differ. Real resizes
+still validate once at the world boundary, including retries for blocked
+standing. Movement/support/trajectory collision checks remain unchanged.
+
+Fresh sequential sixty-second CPU runs replay the same saved 384-NPC input:
+`build/height-before` uses the archived `build/crowd-384/io-worker-probe`;
+`build/height-after` uses the new probe (also archived in that directory).
+Each directory retains input/binary hashes, raw samples and activity metrics.
+No tests, builds or other benchmarks ran during either measurement.
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Tick p50 / p95 / p99 (ms) | 15.20 / 17.07 / 17.65 | 12.53 / 14.32 / 15.02 |
+| Completed ticks in 60s | 3967 | 4736 |
+| Actual SIM Hz | 66.1 | 78.9 |
+| Actors moving over 1m | 319 | 299 |
+| Total travel (m) | 11913 | 11227 |
+| Moving actor-time | 38.6% | 30.4% |
+| End stationary over 5s | 153 | 184 |
+| Maximum route job latency (s) | 10.21 | 10.48 |
+
+These are single-run end-to-end measurements, **not equal executed workloads**:
+faster ticks advance the game clock further while background planning remains
+saturated at 32 pending jobs, and activity differs. The ~18% lower median tick
+cost cannot all be attributed to the removed queries. Every tick still overruns
+the 144 Hz budget; GPU FPS was not measured. No population, geometry, attention,
+collision accuracy or scheduling settings were reduced to obtain these results.
+
+396 Rust tests pass (three existing ignored), including no-op journal/revision
+stability, real resize publication/snapshot isolation, invalid requests, and
+blocked crouch-to-stand recovery at 30/60/144 Hz. Strict Clippy passes; native
+release rebuilt. Existing renderer suites were not rerun for this Rust-only fix.
+
+### Earlier Urgency Comparison
+
+Recorded a fresh pre-change run in `build/urgency-before`. The final comparison
+uses **the same executable hash**, once per setting for thirty seconds, with no
+concurrent compilation or benchmark: `build/urgency-final-control` replays the
+saved 128-NPC scene without `reaction`; `build/urgency-final` enables it. The only
+input change is the observation policy opt-in. These are exploratory single runs,
+not statistically established speedups. Sampling is still the 60 Hz CPU probe
+of a 144 Hz worker, not GPU FPS or a complete tick trace.
+
+| Metric | Reaction off | Reaction on |
+| --- | --- | --- |
+| Tick p50 / p95 / p99 (ms) | 4.596 / 5.746 / 6.903 | 4.677 / 5.920 / 8.263 |
+| Maximum tick (ms) | 14.150 | 19.292 |
+| Completed ticks / overruns | 4299 / 59 | 4291 / 116 |
+| Actors moving over 1m | 128 | 128 |
+| Total travel (m) | 6537 | 6746 |
+| Moving actor-time | 62.4% | 64.2% |
+| End stationary over 5s | 0 | 0 |
+| Route jobs submitted | 363 | 378 |
+| Predicted conflicts / predictive replans | 0 / 0 | 101 / 33 |
+| Urgent reaction submissions | 0 | 8 |
+
+Median additional cost was about 0.08 ms; p95 increased 0.17 ms and p99 increased
+1.36 ms. Movement, route timing and fixture motion differ, so this is a feature
+comparison, not equal-work performance. Initial queue waits remain around ten
+seconds. The control also recorded a 264 ms snapshot-age outlier despite a 14 ms
+maximum sampled simulation step; age is not equivalent to simulation compute.
+
+The final three-lane crossing run (`urgency-final/reactions-1.json`) recorded
+103 predicted conflicts, 15 predictive replans, two urgent reaction submissions,
+all three NPCs moving, 99.3% moving actor-time and no end-stationary actors over
+five seconds. Tick p95 was 0.440 ms, p99 0.579 ms. This is a small demonstration,
+not evidence of universal avoidance or arbitrary obstacle-speed support.
+
+The rejected intermediate `build/urgency-after` is deliberately retained. It
+treated static ramp/obstacle bounding boxes as predicted physical collisions,
+generated 1,080 predictive replans and left 93 actors stationary over five
+seconds. Its lower CPU cost came from reduced movement, not an improvement.
+The final policy explicitly targets observed **translating** obstacles above a
+configurable minimum speed; static surfaces keep their existing geometric
+navigation contract. There are no named-asset or test-scene exceptions.
+
+Regression coverage includes relative motion, receding/crossing misses, stale or
+hidden samples, 30/60/144 Hz braking and lease expiry, ticket preservation,
+in-flight priority updates without cancellation, and starvation checks for both
+worker slices and 128-actor admission. The crossing scene checks early reactions
+and collision-clear movement; early replanning may avoid the urgent threshold.
+Existing fixtures also pause before crossing actors, so collision clearance
+alone is not proof of predictive avoidance. 390 Rust tests pass (three existing
+ignored), strict Clippy passes, and all nine native OpenGL suites pass, including
+world-scaled meter rendering and zoom. The release application is rebuilt.

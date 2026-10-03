@@ -6,8 +6,7 @@ use io_game::PluginWorld;
 use io_traversal::{navigation::Waypoint, Progress};
 use io_types::{Rotation, Vec3};
 use io_world::{
-    character_fits, character_support, sweep_character, walk_character, CharacterSweep,
-    SupportProbe, WorldView,
+    character_support, sweep_character, walk_character, CharacterSweep, SupportProbe, WorldView,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -103,8 +102,16 @@ impl Motor {
         clips: BTreeMap<Motion, (usize, f64)>,
         world: &dyn WorldView,
     ) -> Result<Self, String> {
+        Self::from_shared(Arc::new(definition), actor, clips, world)
+    }
+    /// Share immutable configuration across actors; bindings and runtime state stay local.
+    pub fn from_shared(
+        definition: Arc<Locomotion>,
+        actor: u64,
+        clips: BTreeMap<Motion, (usize, f64)>,
+        world: &dyn WorldView,
+    ) -> Result<Self, String> {
         definition.validate()?;
-        let definition = Arc::new(definition);
         let animation = AnimationDriver::new(definition.clone(), clips)?;
         let p = Self {
             walk_scratch: Default::default(),
@@ -138,6 +145,9 @@ impl Motor {
         self.actor
     }
     pub fn settings(&self) -> &Locomotion {
+        &self.definition
+    }
+    pub fn shared_settings(&self) -> &Arc<Locomotion> {
         &self.definition
     }
     pub fn motion(&self) -> Motion {
@@ -258,6 +268,24 @@ impl Motor {
         w: &mut PluginWorld<E>,
         dt: f32,
     ) -> Result<Vec<MotionEvent>, Error> {
+        self.update_prepared(crate::pipeline::StepHandoff::new(w), dt)
+    }
+    pub(crate) fn planar_delta(&self, dt: f32, crouched: bool) -> Vec3 {
+        let speed = if crouched {
+            self.definition.crouch_speed
+        } else {
+            self.definition.walk_speed
+        };
+        self.direction.scaled(speed * dt)
+    }
+    /// Consume a live-world handoff. Reuse requires the actual body, starting pose
+    /// and normalized command displacement to match; otherwise validate normally.
+    pub fn update_prepared<E>(
+        &mut self,
+        frame: crate::pipeline::StepHandoff<'_, '_, E>,
+        dt: f32,
+    ) -> Result<Vec<MotionEvent>, Error> {
+        let (w, prepared) = frame.into_parts();
         if !dt.is_finite() || dt <= 0. || dt > 0.25 {
             return Err(Error::InvalidInput);
         }
@@ -271,12 +299,8 @@ impl Motor {
         } else {
             self.definition.standing_height
         };
-        let mut probe = shape;
-        probe.height = desired;
-        if character_fits(w, self.actor, start, probe)
-            && w.set_character_height(self.actor, desired)
-        {
-            shape = probe;
+        if shape.height != desired && w.set_character_height(self.actor, desired) {
+            shape.height = desired;
         }
         let crouched = shape.height < self.definition.standing_height - 0.01;
         if crouched != self.crouched {
@@ -299,10 +323,27 @@ impl Motor {
             }
             result.movement
         } else {
-            let supported =
-                character_support(w, Some(self.actor), start, shape, SupportProbe::CONTACT)
+            let planar = self.planar_delta(dt, crouched);
+            // A normal supported step already contains its initial support probe.
+            // Jump/ascent still need the separate contact decision before a sweep.
+            let walk = if !self.jump_intent
+                && self.vertical_speed - self.definition.gravity * dt <= 0.
+            {
+                Some(
+                    match prepared.and_then(|p| p.matching(w, self.actor, start, planar, shape)) {
+                        Some(walk) => walk,
+                        None => self.walk(w, start, planar, shape)?,
+                    },
+                )
+            } else {
+                None
+            };
+            let supported = match walk {
+                Some(walk) => walk.initial_support.is_some(),
+                None => character_support(w, Some(self.actor), start, shape, SupportProbe::CONTACT)
                     .map_err(|_| Error::InvalidWorld)?
-                    .is_some();
+                    .is_some(),
+            };
             if self.jump_intent && supported && !crouched {
                 self.vertical_speed = self.definition.jump_speed;
                 events.push(MotionEvent::Jumped);
@@ -310,31 +351,11 @@ impl Motor {
             self.jump_intent = false;
             let dz = self.vertical_speed * dt - 0.5 * self.definition.gravity * dt * dt;
             self.vertical_speed = (self.vertical_speed - self.definition.gravity * dt).max(-50.);
-            let speed = if crouched {
-                self.definition.crouch_speed
-            } else {
-                self.definition.walk_speed
-            };
-            let delta = self.direction.scaled(speed * dt) + Vec3::new(0., 0., dz);
+            let delta = planar + Vec3::new(0., 0., dz);
             if supported && self.vertical_speed <= 0. {
-                let planar = Vec3::new(delta.x, delta.y, 0.);
-                let walk = match crate::pipeline::walk(
-                    w,
-                    Some(self.actor),
-                    start,
-                    planar,
-                    shape,
-                    &mut self.walk_scratch.0,
-                ) {
-                    Ok(walk) => walk,
-                    // A live actor changes the admissible prefix. Preserve the existing
-                    // contact/refinement behavior only for this blocked case.
-                    Err(
-                        crate::pipeline::WalkError::ActorBlocked
-                        | crate::pipeline::WalkError::UnsupportedStart,
-                    ) => walk_character(w, Some(self.actor), start, planar, shape)
-                        .map_err(|_| Error::InvalidWorld)?,
-                    Err(crate::pipeline::WalkError::Invalid(_)) => return Err(Error::InvalidWorld),
+                let walk = match walk {
+                    Some(walk) => walk,
+                    None => self.walk(w, start, planar, shape)?,
                 };
                 if walk.reached {
                     CharacterSweep {
@@ -406,5 +427,30 @@ impl Motor {
         };
         self.animation.update(w, self.actor, next)?;
         Ok(events)
+    }
+    fn walk(
+        &mut self,
+        w: &dyn WorldView,
+        start: Vec3,
+        delta: Vec3,
+        shape: io_world::CharacterBody,
+    ) -> Result<io_world::CharacterWalk, Error> {
+        match crate::pipeline::walk(
+            w,
+            Some(self.actor),
+            start,
+            delta,
+            shape,
+            &mut self.walk_scratch.0,
+        ) {
+            Ok(walk) => Ok(walk),
+            // Actors may change the admissible prefix. Preserve contact/slide handling.
+            Err(
+                crate::pipeline::WalkError::ActorBlocked
+                | crate::pipeline::WalkError::UnsupportedStart,
+            ) => walk_character(w, Some(self.actor), start, delta, shape)
+                .map_err(|_| Error::InvalidWorld),
+            Err(crate::pipeline::WalkError::Invalid(_)) => Err(Error::InvalidWorld),
+        }
     }
 }

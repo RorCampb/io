@@ -513,6 +513,162 @@ fn prepared_straight_route_does_not_brake_at_every_grid_or_refinement_point() {
 }
 
 #[test]
+fn rolling_curves_execute_a_body_clear_detour_at_multiple_tick_rates() {
+    use io_locomotion::trajectory::{CornerRefiner, TrajectorySettings};
+    for hz in [30, 60, 144] {
+        let obstacle = wall(Vec3::new(2.5, 0., 1.5), Vec3::new(0.5, 1.5, 1.5));
+        let (mut world, mut movement) = fixture_with_obstacles(vec![obstacle]);
+        movement
+            .set_trajectory_refiner(1, TrajectorySettings::default(), CornerRefiner, &world)
+            .unwrap();
+        let (w, mut game) = game_from(world, movement, Reaction::Wait);
+        world = w;
+        start(&mut world, &mut game, Vec3::new(5., 0., 0.));
+        let mut turning_motion = 0;
+        let mut peak_change = 0_f32;
+        let mut previous = Vec3::default();
+        for _ in 0..hz * 16 {
+            let checks = game.movement.executor(1).unwrap().trajectory_stats().checks;
+            game.step(&mut world, &[], 1. / hz as f32).unwrap();
+            assert!(
+                game.movement.executor(1).unwrap().trajectory_stats().checks - checks <= 2,
+                "local preparation/preview budget exceeded"
+            );
+            let f = game.movement.actor(1).unwrap().execution;
+            assert!(io_world::character_fits(
+                &world,
+                1,
+                f.position,
+                world.item(1).unwrap().character_body.unwrap()
+            ));
+            if !game
+                .movement
+                .executor(1)
+                .unwrap()
+                .local_trajectory()
+                .is_empty()
+            {
+                turning_motion += 1;
+                peak_change = peak_change.max(
+                    (f.actual_velocity - previous)
+                        .dot(f.actual_velocity - previous)
+                        .sqrt(),
+                );
+            }
+            previous = f.actual_velocity;
+        }
+        let stats = game.movement.executor(1).unwrap().trajectory_stats();
+        assert!(
+            game.reacted,
+            "{hz} Hz failed: {:?}, {stats:?}",
+            game.movement.actor(1)
+        );
+        assert!(
+            stats.accepted > 0 && turning_motion > 0,
+            "{hz} Hz never followed curve: {stats:?}"
+        );
+        assert!(
+            peak_change < 14. / hz as f32 + 0.03,
+            "{hz}Hz velocity discontinuity {peak_change}"
+        );
+        println!("{hz}Hz: {stats:?}, peak dv={peak_change}");
+    }
+}
+
+#[test]
+fn local_preview_requests_replacement_before_contact_and_retains_ticket() {
+    use io_locomotion::trajectory::{CornerRefiner, TrajectorySettings};
+    let (world, mut movement) = fixture_with_obstacles(vec![remote_box()]);
+    movement
+        .set_trajectory_refiner(1, TrajectorySettings::default(), CornerRefiner, &world)
+        .unwrap();
+    let (mut world, mut game) = game_from(world, movement, Reaction::Wait);
+    start(&mut world, &mut game, Vec3::new(6., 0., 0.));
+    for _ in 0..35 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+    }
+    let ticket = game.movement.actor(1).unwrap().ticket;
+    assert!(world.set_kinematic_target(9, Vec3::new(3., 0., 0.5), Default::default()));
+    let mut early = false;
+    for _ in 0..600 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+        let f = game.movement.actor(1).unwrap();
+        if !early
+            && game
+                .movement
+                .executor(1)
+                .unwrap()
+                .trajectory_stats()
+                .anticipations
+                > 0
+        {
+            assert!(
+                f.execution.position.x < 1.6,
+                "late preview: {:?}",
+                f.execution
+            );
+            assert_eq!(f.ticket, ticket);
+            early = true;
+        }
+        assert!(io_world::character_fits(
+            &world,
+            1,
+            f.execution.position,
+            world.item(1).unwrap().character_body.unwrap()
+        ));
+    }
+    assert!(
+        early && game.reacted,
+        "preview/detour failed: {:?}",
+        game.movement.actor(1)
+    );
+}
+
+#[test]
+fn invalid_external_curve_is_rejected_and_replacing_strategy_preserves_contracts() {
+    use io_locomotion::trajectory::*;
+    #[derive(Debug)]
+    struct InvalidCurve;
+    impl TrajectoryRefiner for InvalidCurve {
+        fn propose(&self, _: RefinementInput) -> Option<CurveProposal> {
+            Some(CurveProposal {
+                controls: [Vec3::new(f32::NAN, 0., 0.); 4],
+            })
+        }
+    }
+    let obstacle = wall(Vec3::new(2.5, 0., 1.5), Vec3::new(0.5, 1.5, 1.5));
+    let (world, mut movement) = fixture_with_obstacles(vec![obstacle]);
+    let original = movement.actor(1).unwrap().ticket;
+    assert!(movement
+        .set_trajectory_refiner(
+            1,
+            TrajectorySettings {
+                samples: 1000,
+                ..Default::default()
+            },
+            InvalidCurve,
+            &world
+        )
+        .is_err());
+    assert_eq!(movement.actor(1).unwrap().ticket, original);
+    let ticket = movement
+        .set_trajectory_refiner(1, TrajectorySettings::default(), InvalidCurve, &world)
+        .unwrap();
+    assert_ne!(ticket, original);
+    let (mut world, mut game) = game_from(world, movement, Reaction::Wait);
+    start(&mut world, &mut game, Vec3::new(5., 0., 0.));
+    let mut rejected = false;
+    for _ in 0..300 {
+        if game.step(&mut world, &[], 1. / 60.).is_err() {
+            rejected = true;
+            break;
+        }
+    }
+    assert!(rejected);
+    assert!(world.item(1).unwrap().transform.anchor.finite());
+}
+
+#[test]
 fn rounded_detour_keeps_body_clear_and_custom_steering_cannot_cut_through_wall() {
     let obstacle = wall(Vec3::new(2.5, 0., 1.5), Vec3::new(0.5, 1.5, 1.5));
     let (world, movement) = fixture_with_obstacles(vec![obstacle.clone()]);
@@ -568,6 +724,50 @@ fn replacing_destination_brakes_old_direction_instead_of_finishing_old_route() {
     }
     assert!(furthest - before.execution.position.x < 0.3);
     assert!(world.item(1).unwrap().transform.anchor.x < before.execution.position.x - 1.);
+}
+
+#[test]
+fn leased_urgency_brakes_without_losing_route_and_expires_at_all_tick_rates() {
+    use io_traversal::NavigationPriority;
+    for hz in [30, 60, 144] {
+        let dt = 1. / hz as f32;
+        let (mut world, mut game) = game(Reaction::Wait);
+        start(&mut world, &mut game, Vec3::new(8., 0., 0.));
+        for _ in 0..hz {
+            game.step(&mut world, &[], dt).unwrap();
+        }
+        let before = game.movement.actor(1).unwrap();
+        assert!(before.execution.actual_velocity.x > 1.);
+        let hint = NavigationRequest::Prioritize {
+            ticket: before.ticket,
+            priority: NavigationPriority::Urgent,
+            seconds: 0.5,
+        };
+        game.command(&mut world, hint).unwrap();
+        for _ in 0..hz / 3 {
+            game.step(&mut world, &[], dt).unwrap();
+        }
+        let stopped = game.movement.actor(1).unwrap();
+        assert_eq!(stopped.ticket, before.ticket);
+        assert!(
+            stopped.execution.actual_velocity.x.abs() < 0.05,
+            "{stopped:?}"
+        );
+        assert!(game.movement.route(1).is_some_and(|r| !r.is_empty()));
+        for _ in 0..hz {
+            game.step(&mut world, &[], dt).unwrap();
+        }
+        assert!(game.movement.actor(1).unwrap().execution.actual_velocity.x > 1.);
+        let invalid = game.movement.clone().request(Envelope::new(
+            MessageId(99),
+            NavigationRequest::Prioritize {
+                ticket: before.ticket,
+                priority: NavigationPriority::Urgent,
+                seconds: f32::NAN,
+            },
+        ));
+        assert_eq!(invalid.payload, Err(NavigationError::InvalidConfiguration));
+    }
 }
 
 #[test]

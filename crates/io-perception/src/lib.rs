@@ -4,6 +4,7 @@
 use io_types::Vec3;
 use io_world::{sight_sample_clear, WorldView};
 use serde::Deserialize;
+pub mod intake;
 pub mod pipeline;
 
 /// A current visual contact, not knowledge of a hidden target's live position.

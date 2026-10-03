@@ -372,6 +372,8 @@ impl World {
         };
         self.set_pose_3d(item_id, anchor, rotation)
     }
+    /// Ensures the requested body height. An unchanged height succeeds without
+    /// clearance queries or publication; this is not an overlap test.
     pub fn set_character_height(&mut self, id: u64, height: f32) -> bool {
         let Some(item) = self.item(id) else {
             return false;
@@ -379,11 +381,14 @@ impl World {
         let Some(mut shape) = item.character_body else {
             return false;
         };
+        if item.motion.is_some() || item.physics_body.is_some() {
+            return false;
+        }
+        if shape.height == height {
+            return true;
+        }
         shape.height = height;
-        if item.motion.is_some()
-            || item.physics_body.is_some()
-            || !crate::character_fits(self, id, item.transform.anchor, shape)
-        {
+        if !crate::character_fits(self, id, item.transform.anchor, shape) {
             return false;
         }
         let index = self.by_id[&id];

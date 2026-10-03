@@ -3,6 +3,39 @@ use crate::navigation::{Connection, Endpoints, Failure, Location, Waypoint};
 use io_world::{Space, World, WorldView};
 use std::sync::{atomic::AtomicUsize, Condvar};
 
+#[test]
+fn urgent_work_gets_more_slices_without_starving_routine_work() {
+    let mut queue = VecDeque::from([(0, 0_u8), (1, 2), (2, 2), (3, 1)]);
+    let mut counts = [0_i32; 4];
+    for slice in 0..160 {
+        let index = priority_index(queue.iter().map(|(_, p)| *p), slice);
+        let job = queue.remove(index).unwrap();
+        counts[job.0] += 1;
+        queue.push_back(job);
+    }
+    assert!(counts.iter().all(|&c| c > 0), "{counts:?}");
+    assert!(counts[1] > counts[0] && counts[2] > counts[0]);
+    assert!((counts[1] - counts[2]).abs() <= 1);
+}
+
+#[test]
+fn admission_fairness_does_not_alias_population_with_priority_cadence() {
+    let mut order = AdmissionOrder::default();
+    let mut counts = [0; 128];
+    for tick in 1..=512 {
+        let selected = order.select(128, tick, |i| {
+            if i == 0 {
+                NavigationPriority::Urgent
+            } else {
+                NavigationPriority::Routine
+            }
+        });
+        counts[selected] += 1;
+    }
+    assert!(counts.iter().all(|&n| n >= 1));
+    assert_eq!(counts[0], 385);
+}
+
 #[derive(Debug, Default)]
 struct Gate {
     entered: AtomicUsize,
@@ -124,6 +157,7 @@ impl RouteProvider for Line {
 fn job(actor: u64, attempt: u64, profile: u8, destination: u32) -> PlanJob<Line> {
     let world = World::new(Space::new(Vec3::new(20., 20., 20.)), vec![]);
     PlanJob {
+        priority: NavigationPriority::Routine,
         key: PlanKey {
             ticket: NavigationTicket { actor, revision: 1 },
             attempt,
@@ -163,6 +197,28 @@ fn blocked_provider_does_not_block_polling_and_queue_is_bounded() {
         planner.poll();
         planner.stats().completed == CAPACITY as u64
     });
+}
+
+#[test]
+fn inflight_priority_changes_do_not_restart_or_cancel_the_search() {
+    let gate = Arc::new(Gate::default());
+    let mut planner = Planner::new(PlanningMode::Background);
+    let key = job(1, 1, 0, 20).key;
+    planner.submit(job(1, 1, 0, 20), gate.clone()).unwrap();
+    until(|| gate.entered.load(Ordering::Acquire) > 0);
+    planner.prioritize(1, NavigationPriority::Urgent);
+    assert_eq!(planner.inflight[&1].2.load(Ordering::Relaxed), 2);
+    planner.prioritize(1, NavigationPriority::Routine);
+    assert_eq!(planner.stats().priority_updates, 2);
+    assert_eq!(planner.stats().submitted, 1);
+    assert_eq!(planner.stats().cancelled, 0);
+    assert!(planner.contains(key));
+    gate.release();
+    until(|| {
+        planner.poll();
+        planner.results.contains_key(&1)
+    });
+    assert!(planner.take(key).is_some());
 }
 #[test]
 fn replaced_attempt_and_cancelled_objective_cannot_return_old_results() {

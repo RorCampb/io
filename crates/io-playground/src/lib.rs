@@ -2,6 +2,9 @@
 //! Example game plugin. Patrol, perception interpretation and cat-and-mouse rules live here.
 pub use io_locomotion::athletics;
 mod barrier;
+mod battle;
+pub use battle::{BattleDefinition, BattleDiagnostic, BattleMember, BattlePhase, BattleRole};
+pub use io_perception::intake::ObservationSource;
 mod config;
 mod discovery;
 pub use barrier::BarrierDefinition;
@@ -11,6 +14,10 @@ pub use discovery::{
 mod movement;
 mod observation;
 mod pursuit;
+mod reaction;
+pub use reaction::{
+    ObservedMotion, PredictedConflict, ReactionRequest, ReactionSettings, ReactionStage,
+};
 #[cfg(test)]
 mod tests;
 pub use config::*;
@@ -38,6 +45,7 @@ pub struct NpcDiagnostic {
     pub goal: Option<NavigationGoal>,
     pub feedback: io_locomotion::ActorFeedback,
     pub route: Vec<Vec3>,
+    pub local_trajectory: Vec<Vec3>,
 }
 
 /// Playground controls, not movement-engine commands. Settings are runtime-only.
@@ -106,6 +114,7 @@ pub struct Traversal {
     debug_routes: bool,
     barriers: Vec<barrier::Barrier>,
     expected_barriers: Vec<BarrierDefinition>,
+    battle: Option<battle::Battle>,
 }
 
 fn submit(
@@ -135,7 +144,21 @@ impl Traversal {
         bindings: Vec<NpcBinding>,
         world: &dyn WorldView,
     ) -> Result<Self, String> {
+        let player = Motor::new(definition.locomotion.clone(), player, clips, world)?;
+        Self::with_player_motor(definition, player, bindings, world)
+    }
+    /// Composition entry point for an already bound player, including shared definitions.
+    pub fn with_player_motor(
+        definition: Definition,
+        player_motor: Motor,
+        bindings: Vec<NpcBinding>,
+        world: &dyn WorldView,
+    ) -> Result<Self, String> {
         definition.validate()?;
+        player_motor
+            .validate(world)
+            .map_err(|e| format!("invalid player: {e:?}"))?;
+        let player = player_motor.actor();
         if definition.navigation.as_ref().map_or(0, |n| n.agents.len()) != bindings.len() {
             return Err("unresolved navigation agents".into());
         }
@@ -222,11 +245,27 @@ impl Traversal {
             }
         }
         let expected_barriers = definition.barriers().cloned().collect();
+        let battle = definition
+            .battle
+            .clone()
+            .map(|settings| {
+                let bindings = definition
+                    .navigation
+                    .as_ref()
+                    .unwrap()
+                    .agents
+                    .iter()
+                    .zip(&behaviors)
+                    .map(|(a, b)| (a.item.clone(), b.actor, b.patrol_goal))
+                    .collect::<Vec<_>>();
+                battle::Battle::new(settings, player, &bindings)
+            })
+            .transpose()?;
         let obstacle_observations = definition.obstacle_observations.map(|settings| {
             discovery::ObstacleObservations::new(settings, behaviors.iter().map(|b| b.actor))
         });
         Ok(Self {
-            player: Motor::new(definition.locomotion, player, clips, world)?,
+            player: player_motor,
             movement,
             behaviors,
             observations: vec![],
@@ -237,6 +276,7 @@ impl Traversal {
             debug_routes: definition.debug_routes,
             barriers: vec![],
             expected_barriers,
+            battle,
         })
     }
     pub fn with_observations(
@@ -278,6 +318,35 @@ impl Traversal {
     pub fn observations(&self) -> &[ObservationTrack] {
         &self.observations
     }
+    pub fn battle_diagnostics(&self) -> Vec<BattleDiagnostic> {
+        self.battle
+            .as_ref()
+            .map_or_else(Vec::new, |b| b.diagnostics())
+    }
+    pub fn battle_reports(&self) -> u64 {
+        self.battle.as_ref().map_or(0, |b| b.reports())
+    }
+    pub fn battle_log(&self) -> Vec<String> {
+        self.battle
+            .as_ref()
+            .map_or_else(Vec::new, |b| b.log().rev().take(2).cloned().collect())
+    }
+    pub fn obstacle_meters(&self) -> Vec<(u64, f32, f32)> {
+        self.obstacle_observations
+            .as_ref()
+            .map_or_else(Vec::new, |o| o.meters())
+    }
+    /// Direct read-only discovery memory for plugin behavior and diagnostics.
+    pub fn discovered_observations(&self) -> impl Iterator<Item = &ObservationTrack> {
+        self.obstacle_observations.iter().flat_map(|o| o.tracks())
+    }
+    pub fn observers_noticing(&self, target: u64) -> usize {
+        self.discovered_observations()
+            .filter(|t| {
+                t.target() == target && t.evidence() > 0.03 && t.attention() >= t.notice_attention()
+            })
+            .count()
+    }
     pub fn discovery_stats(&self) -> Option<DiscoveryStats> {
         self.obstacle_observations.as_ref().map(|o| o.stats)
     }
@@ -294,12 +363,16 @@ impl Traversal {
                     goal: b.requested,
                     feedback: m.actor(b.actor)?,
                     route: m.route(b.actor),
+                    local_trajectory: m.local_trajectory(b.actor),
                 })
             })
             .collect()
     }
     pub fn debug_routes(&self) -> bool {
         self.debug_routes
+    }
+    pub fn trajectory_stats(&self) -> Option<io_locomotion::trajectory::TrajectoryStats> {
+        self.movement.as_ref().map(|m| m.trajectory_stats())
     }
     pub fn attention_settings(&self, index: usize) -> Option<(AttentionSettings, bool)> {
         let track = self.observations.get(index)?;
@@ -470,6 +543,18 @@ impl GamePlugin for Traversal {
             world.emit(Event::Observation(notice));
         }
         if let (Some(movement), Some(domain)) = (&mut self.movement, self.domain) {
+            let battle_decisions = match &mut self.battle {
+                Some(b) => b.update(world, &self.observations, movement, dt)?,
+                None => BTreeMap::new(),
+            };
+            if let Some(observations) = &mut self.obstacle_observations {
+                for request in observations
+                    .reactions(movement, world)
+                    .map_err(|_| Error::InvalidWorld)?
+                {
+                    submit(movement, &mut self.next_message, request)?;
+                }
+            }
             // Initial search already reads geometry. Hold discoveries until there is
             // a route/result to judge instead of scheduling another full search blindly.
             let dynamic_notices = self
@@ -555,7 +640,7 @@ impl GamePlugin for Traversal {
                     }
                     None => (pursuit::Intent::Patrol, false, 0.),
                 };
-                let desired = match intent {
+                let mut desired = match intent {
                     pursuit::Intent::Patrol if changed => {
                         Some(Some(NavigationGoal::Position(b.patrol_goal)))
                     }
@@ -598,6 +683,9 @@ impl GamePlugin for Traversal {
                         Some(Some(NavigationGoal::Position(p)))
                     }
                 };
+                if self.battle.as_ref().is_some_and(|s| s.controls(b.actor)) {
+                    desired = battle_decisions.get(&b.actor).copied();
+                }
                 // Finish a committed airborne action before replacing its route.
                 // Safety/collision invalidation remains the executor's responsibility.
                 if let Some(goal) =

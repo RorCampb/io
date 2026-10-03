@@ -11,10 +11,97 @@ use io_world::{
 };
 
 #[derive(Clone, Debug)]
+struct SharedPair {
+    first: Motor,
+    second: Motor,
+}
+impl GamePlugin for SharedPair {
+    type Command = Command;
+    type Event = ();
+    type Error = Error;
+    fn info(&self) -> PluginInfo {
+        PluginInfo {
+            id: "shared-motors",
+            version: 1,
+        }
+    }
+    fn validate(&self, world: &dyn WorldView) -> Result<(), Error> {
+        self.first.validate(world)?;
+        self.second.validate(world)
+    }
+    fn active_items(&self) -> Vec<u64> {
+        vec![self.first.actor(), self.second.actor()]
+    }
+    fn command(&mut self, _: &mut PluginWorld<()>, command: Command) -> Result<(), Error> {
+        self.first.command(command)
+    }
+    fn update(&mut self, world: &mut PluginWorld<()>, tick: Tick) -> Result<(), Error> {
+        self.first.update(world, tick.seconds())?;
+        self.second.update(world, tick.seconds())?;
+        Ok(())
+    }
+}
+
+#[test]
+fn shared_locomotion_preserves_independent_actor_state_and_snapshot_state() {
+    use std::sync::Arc;
+    let (source, first) = flat_motor();
+    let definition = first.shared_settings().clone();
+    let mut items = source.items().to_vec();
+    let mut other = source.item(1).unwrap().clone();
+    other.id = 3;
+    other.transform.anchor.y = 2.;
+    let other_position = other.transform.anchor;
+    items.push(other);
+    let mut world = World::new(source.space().clone(), items);
+    let clips = Motion::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(i, m)| (m, (i, 1.)))
+        .collect();
+    let second = Motor::from_shared(definition.clone(), 3, clips, &world).unwrap();
+    assert!(Arc::ptr_eq(
+        first.shared_settings(),
+        second.shared_settings()
+    ));
+    let mut game = Session::register(SharedPair { first, second }, &world).unwrap();
+    let snapshot = game.clone();
+    game.command(&mut world, Command::Move { x: 1., y: 0. })
+        .unwrap();
+    game.command(&mut world, Command::Crouch(true)).unwrap();
+    for _ in 0..30 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+    }
+    assert!(world.item(1).unwrap().transform.anchor.x > -0.7);
+    assert_eq!(world.item(3).unwrap().transform.anchor.x, other_position.x);
+    assert_eq!(world.item(3).unwrap().transform.anchor.y, other_position.y);
+    assert!(game.first.crouched());
+    assert!(!game.second.crouched());
+    assert!(!snapshot.first.crouched());
+    assert!(Arc::ptr_eq(
+        game.first.shared_settings(),
+        snapshot.first.shared_settings()
+    ));
+    assert_eq!(definition.standing_height, 1.8);
+    assert_eq!(game.first.motion(), Motion::CrouchWalk);
+    assert_eq!(game.second.motion(), Motion::Idle);
+    let mut invalid = (*definition).clone();
+    invalid.walk_speed = f32::NAN;
+    let clips = Motion::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(i, m)| (m, (i, 1.)))
+        .collect();
+    assert!(Motor::from_shared(Arc::new(invalid), 3, clips, &world).is_err());
+}
+
+#[derive(Clone, Debug)]
 struct MotorDemo {
     motor: Motor,
     jumps: u32,
     landings: u32,
+    proposal: Option<(Vec3, Option<CharacterBody>)>,
+    prepared_steps: u32,
 }
 impl GamePlugin for MotorDemo {
     type Command = Command;
@@ -36,7 +123,18 @@ impl GamePlugin for MotorDemo {
         self.motor.command(command)
     }
     fn update(&mut self, world: &mut PluginWorld<()>, tick: Tick) -> Result<(), Error> {
-        for event in self.motor.update(world, tick.seconds())? {
+        let events = if let Some((velocity, override_shape)) = self.proposal {
+            let item = world.item(1).unwrap();
+            let start = item.transform.anchor;
+            let shape = override_shape.unwrap_or(item.character_body.unwrap());
+            let mut handoff = io_locomotion::pipeline::StepHandoff::new(world);
+            self.prepared_steps +=
+                u32::from(handoff.prepare(1, start, velocity.scaled(tick.seconds()), shape));
+            self.motor.update_prepared(handoff, tick.seconds())?
+        } else {
+            self.motor.update(world, tick.seconds())?
+        };
+        for event in events {
             match event {
                 MotionEvent::Jumped => self.jumps += 1,
                 MotionEvent::Landed => self.landings += 1,
@@ -125,6 +223,8 @@ fn fixture() -> (World, Session<MotorDemo>) {
             motor,
             jumps: 0,
             landings: 0,
+            proposal: None,
+            prepared_steps: 0,
         },
         &world,
     )
@@ -156,6 +256,8 @@ fn motor_session(motor: Motor, w: &World) -> Session<MotorDemo> {
             motor,
             jumps: 0,
             landings: 0,
+            proposal: None,
+            prepared_steps: 0,
         },
         w,
     )
@@ -166,6 +268,98 @@ fn abilities() -> io_locomotion::athletics::Settings {
         step_height: 0.3,
         jump_distance: 3.,
         max_drop: 0.6,
+    }
+}
+
+#[test]
+fn prepared_motor_matches_normal_execution_and_rejects_wrong_path_or_body() {
+    for hz in [30, 60, 144] {
+        for (velocity, height) in [(2.1, None), (-2.1, None), (2.1, Some(1.1))] {
+            let (world, mut motor) = flat_motor();
+            let mut items = world.items().to_vec();
+            items.push(Item {
+                id: 3,
+                transform: Transform::new(Vec3::new(0.8, 0., 1.6), Vec3::new(1., 1., 1.), 0.)
+                    .unwrap(),
+                physics_body: Some(PhysicsBody::new(BodyKind::Static)),
+                collider: Some(Collider::new(ColliderShape::Box {
+                    half_extents: Vec3::new(0.3, 3., 0.25),
+                })),
+                ..Default::default()
+            });
+            let mut normal = World::new(world.space().clone(), items.clone());
+            let mut prepared = World::new(world.space().clone(), items);
+            motor.command(Command::Move { x: 1., y: 0. }).unwrap();
+            let mut a = motor_session(motor.clone(), &normal);
+            let mut b = Session::register(
+                MotorDemo {
+                    motor,
+                    jumps: 0,
+                    landings: 0,
+                    prepared_steps: 0,
+                    proposal: Some((
+                        Vec3::new(velocity, 0., 0.),
+                        height.map(|height| CharacterBody {
+                            height,
+                            ..prepared.item(1).unwrap().character_body.unwrap()
+                        }),
+                    )),
+                },
+                &prepared,
+            )
+            .unwrap();
+            for _ in 0..hz * 2 {
+                a.step(&mut normal, &[], 1. / hz as f32).unwrap();
+                b.step(&mut prepared, &[], 1. / hz as f32).unwrap();
+                assert_eq!(
+                    normal.item(1).unwrap().transform.anchor,
+                    prepared.item(1).unwrap().transform.anchor
+                );
+                assert_eq!(a.motor.grounded(), b.motor.grounded());
+                assert_eq!(a.motor.motion(), b.motor.motion());
+                let actor = prepared.item(1).unwrap();
+                // Sweeps permit contact-scale floating-point penetration; compare
+                // exact normal execution above and independently forbid crossing.
+                assert!(
+                    actor.transform.anchor.x <= 0.2001 && actor.transform.anchor.z >= -0.0001,
+                    "hz={hz}, velocity={velocity}, height={height:?}, pose={:?}",
+                    actor.transform.anchor
+                );
+            }
+            assert!(b.prepared_steps > 0);
+            assert!(
+                prepared.item(1).unwrap().transform.anchor.x < 0.3,
+                "standing body must not consume a crouched proof"
+            );
+        }
+    }
+}
+
+#[test]
+fn crouch_retries_blocked_standing_when_ceiling_moves_away() {
+    for hz in [30, 60, 144] {
+        let (mut world, mut motor) = flat_motor();
+        motor.command(Command::Crouch(true)).unwrap();
+        let mut game = motor_session(motor, &world);
+        game.step(&mut world, &[], 1. / hz as f32).unwrap();
+        assert_eq!(world.item(1).unwrap().character_body.unwrap().height, 1.1);
+
+        let mut ceiling = world.item(2).unwrap().clone();
+        ceiling.id = 3;
+        ceiling.physics_body = Some(PhysicsBody::new(BodyKind::Kinematic));
+        ceiling.transform.anchor = Vec3::new(0., 0., 2.);
+        let mut items = world.items().to_vec();
+        items.push(ceiling);
+        world = World::new(world.space().clone(), items);
+        game.command(&mut world, Command::Crouch(false)).unwrap();
+        for _ in 0..hz {
+            game.step(&mut world, &[], 1. / hz as f32).unwrap();
+            assert_eq!(world.item(1).unwrap().character_body.unwrap().height, 1.1);
+        }
+        assert!(world.set_kinematic_target(3, Vec3::new(0., 0., 4.), Rotation::default()));
+        world.simulate(&[2], 1. / hz as f32);
+        game.step(&mut world, &[], 1. / hz as f32).unwrap();
+        assert_eq!(world.item(1).unwrap().character_body.unwrap().height, 1.8);
     }
 }
 

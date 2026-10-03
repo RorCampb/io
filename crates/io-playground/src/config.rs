@@ -3,6 +3,7 @@ use io_traversal::navigation::Domain;
 use io_types::Vec3;
 use serde::Deserialize;
 use std::ops::Deref;
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -10,6 +11,9 @@ pub struct Definition {
     pub player: String,
     #[serde(flatten)]
     pub locomotion: Locomotion,
+    /// Named alternatives to the default, resolved once when binding actors.
+    #[serde(default)]
+    pub locomotion_profiles: BTreeMap<String, Locomotion>,
     #[serde(default)]
     pub navigation: Option<NavigationDefinition>,
     #[serde(default)]
@@ -22,6 +26,8 @@ pub struct Definition {
     pub barrier_cycle: Option<crate::BarrierDefinition>,
     #[serde(default)]
     pub barrier_cycles: Vec<crate::BarrierDefinition>,
+    #[serde(default)]
+    pub battle: Option<BattleDefinition>,
 }
 impl Deref for Definition {
     type Target = Locomotion;
@@ -38,6 +44,12 @@ impl Definition {
             return Err("invalid traversal player".into());
         }
         self.locomotion.validate()?;
+        for (name, settings) in &self.locomotion_profiles {
+            if name.is_empty() || name.len() > 64 {
+                return Err("invalid locomotion profile name".into());
+            }
+            settings.validate()?;
+        }
         if let Some(settings) = self.obstacle_observations {
             settings.validate()?;
             if self.navigation.is_none() {
@@ -53,9 +65,20 @@ impl Definition {
         }
         if let Some(n) = &self.navigation {
             n.validate(&self.player)?;
+            for a in &n.agents {
+                match (&a.locomotion_profile, &a.locomotion) {
+                    (Some(_), Some(_)) => {
+                        return Err("choose inline locomotion OR a named profile".into())
+                    }
+                    (Some(name), None) if !self.locomotion_profiles.contains_key(name) => {
+                        return Err(format!("unknown locomotion profile: {name}"))
+                    }
+                    _ => {}
+                }
+            }
         }
-        if self.observations.len() > 4 {
-            return Err("at most four observation tracks".into());
+        if self.observations.len() > 64 {
+            return Err("at most 64 explicit observation tracks".into());
         }
         let mut pairs = std::collections::HashSet::new();
         for observation in &self.observations {
@@ -77,8 +100,57 @@ impl Definition {
                 }
             }
         }
+        if let Some(battle) = &self.battle {
+            battle.validate()?;
+            let navigation = self.navigation.as_ref().ok_or("battle needs navigation")?;
+            for member in &battle.members {
+                let npc = navigation
+                    .agents
+                    .iter()
+                    .find(|a| a.item == member.item)
+                    .ok_or("unknown battle actor")?;
+                if npc.pursuit.is_some() {
+                    return Err("battle and pursuit cannot control the same actor".into());
+                }
+                if !self
+                    .observations
+                    .iter()
+                    .any(|o| o.observer == member.item && o.target == self.player)
+                {
+                    return Err("battle member needs a player observation track".into());
+                }
+            }
+        }
         Ok(())
     }
+    /// Loading-time resolution, not a per-tick registry. Default users share with the player.
+    pub fn resolve_locomotion(&self) -> Result<ResolvedLocomotion, String> {
+        self.validate()?;
+        let default = Arc::new(self.locomotion.clone());
+        let named: BTreeMap<_, _> = self
+            .locomotion_profiles
+            .iter()
+            .map(|(name, settings)| (name, Arc::new(settings.clone())))
+            .collect();
+        let agents = self
+            .navigation
+            .iter()
+            .flat_map(|n| &n.agents)
+            .map(|a| match (&a.locomotion_profile, &a.locomotion) {
+                (Some(name), None) => named[name].clone(),
+                (None, Some(settings)) => Arc::new(settings.clone()),
+                (None, None) => default.clone(),
+                (Some(_), Some(_)) => unreachable!("validated exclusive settings source"),
+            })
+            .collect();
+        Ok(ResolvedLocomotion { default, agents })
+    }
+}
+/// Resolved immutable definitions, in the same order as navigation.agents.
+#[derive(Clone, Debug)]
+pub struct ResolvedLocomotion {
+    pub default: Arc<Locomotion>,
+    pub agents: Vec<Arc<Locomotion>>,
 }
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -112,6 +184,8 @@ pub struct NpcDefinition {
     pub item: String,
     pub goal: [f32; 3],
     pub locomotion: Option<Locomotion>,
+    #[serde(default)]
+    pub locomotion_profile: Option<String>,
     /// Overrides the navigation default for this actor, not a separate controller.
     pub athletics: Option<crate::athletics::Settings>,
     #[serde(default = "yes")]

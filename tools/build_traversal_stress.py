@@ -10,18 +10,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def scene(count=128, moving="timed", long_routes=False, overview=False, tick_hz=144, debug_routes=False):
-    if not 1 <= count <= 256 or moving not in ("timed", "continuous", "static"):
-        raise ValueError("use 1..256 NPCs and timed/continuous/static moving geometry")
+def scene(count=128, moving="timed", long_routes=False, overview=False, tick_hz=144, debug_routes=False,
+          extra_obstacles=0):
+    if type(count) is not int or not 1 <= count <= 384 or moving not in ("timed", "continuous", "static"):
+        raise ValueError("use 1..384 NPCs and timed/continuous/static moving geometry")
+    if type(extra_obstacles) is not int or not 0 <= extra_obstacles <= 12:
+        raise ValueError("extra_obstacles must be 0..12 per district")
     if type(tick_hz) is not int or not 4 <= tick_hz <= 1000:
         raise ValueError("tick_hz must be an integer between 4 and 1000")
     source = json.loads((ROOT / "assets/dungeon/cat-mouse.json").read_text())
     locomotion = copy.deepcopy(source["traversal"])
     locomotion.pop("observations")
     locomotion["obstacle_observations"] = {
+        "reaction": {},
         "vision": {"range": 18, "fov_degrees": 200, "gain_per_second": 6, "decay_per_second": 2},
         "notice_attention": 0.15, "interval_seconds": 0.1, "retention_seconds": 2,
-        "observers_per_tick": 8, "tracks_per_observer": 6,
+        "observers_per_tick": min(32, max(8, math.ceil(count / 16))), "tracks_per_observer": 6,
+        "character_tracks_per_observer": 6,
     }
     locomotion.pop("navigation")
     locomotion["walk_speed"] = 3.2
@@ -72,6 +77,13 @@ def scene(count=128, moving="timed", long_routes=False, overview=False, tick_hz=
             box(f"{prefix}-light-{k}", [x-15+6*k-.3, y+31.7, 4], [1, 1, .4], [1, .85, .38], None)
         box(f"{prefix}-cover-west", [x-14, y+11, 0], [8, 1, 2.5], [.43, .48, .56])
         box(f"{prefix}-cover-east", [x+6, y+10, 0], [1, 6, 2.5], [.43, .48, .56])
+        clutter = [(-8, -29, 4, 1), (5, -27, 4, 1), (-31, -10, 1, 4),
+                   (-29, 5, 1, 4), (28, -12, 1, 4), (30, 6, 1, 4),
+                   (-12, 27, 3, 1), (6, 29, 3, 1), (-16, -11, 2, 2),
+                   (12, -13, 2, 2), (-3, 12, 2, 2), (10, 22, 2, 2)]
+        for k, (dx, dy, sx, sy) in enumerate(clutter[:extra_obstacles]):
+            box(f"{prefix}-extra-obstacle-{k}", [x+dx, y+dy, 0], [sx, sy, 1.6+(k % 3)*.3],
+                [.62, .43+.04*(k % 3), .28])
         # The raised market crossing is physical geometry, not an authored nav link.
         angle = math.atan2(2, 12)
         # Extend below the floor so feet-center support exists before the body's
@@ -120,6 +132,7 @@ def scene(count=128, moving="timed", long_routes=False, overview=False, tick_hz=
             goal = [other_x-20, other_y-20, 0]
             patrol = [points[0], goal]
         agents.append({"item": npc["name"], "goal": goal, "can_crouch": True,
+                       "steering": {"trajectory": {}},
                        "on_arrival": {"type": "patrol", "points": patrol}})
     locomotion.update(barrier_cycles=cycles, debug_routes=debug_routes,
         navigation={"planning": "background", "domain": {"origin": [0, 0, 0],
@@ -136,13 +149,16 @@ def main():
     p.add_argument("--overview", action="store_true")
     p.add_argument("--tick-hz", type=int, default=144)
     p.add_argument("--debug-routes", action="store_true", help="draw accepted routes and waypoint crosses")
+    p.add_argument("--extra-obstacles", type=int, default=0, help="additional collidable props per district (0..12)")
     p.add_argument("--output", type=Path)
     a = p.parse_args()
-    if not 1 <= a.npcs <= 256:
-        p.error("this layout supports 1..256 nonoverlapping NPC spawns")
+    if not 1 <= a.npcs <= 384:
+        p.error("this layout supports 1..384 nonoverlapping NPC spawns")
+    if not 0 <= a.extra_obstacles <= 12:
+        p.error("--extra-obstacles must be between 0 and 12")
     if not 4 <= a.tick_hz <= 1000:
         p.error("--tick-hz must be between 4 and 1000")
-    result = scene(a.npcs, a.moving, a.long_routes, a.overview, a.tick_hz, a.debug_routes)
+    result = scene(a.npcs, a.moving, a.long_routes, a.overview, a.tick_hz, a.debug_routes, a.extra_obstacles)
     output = a.output or ROOT / "assets/dungeon" / f"stress-{a.npcs}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     for package in result["packages"]:

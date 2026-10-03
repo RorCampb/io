@@ -12,6 +12,7 @@ mod steering;
 pub mod surface;
 #[cfg(test)]
 mod surface_tests;
+pub mod trajectory;
 pub use executor::*;
 pub use io_traversal::{
     Error, NavigationError, NavigationGoal, NavigationRequest, NavigationStatus, NavigationTicket,

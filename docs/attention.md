@@ -32,6 +32,10 @@ They show measurements; they are not draggable configuration controls.
 
 ## Mechanics and Ownership
 
+For combining visual facts with radio or other sources, see the engine's
+[shared observation intake](observation-intake.md). It retains explicit provenance
+and does not inject reported information into visual attention.
+
 `io-world::sight_sample_clear` reuses the existing collider/terrain sight test,
 excluding the observer and target themselves. `io-perception` samples nine
 positions on an upright character-body proxy, or current bounds for other Items. A
@@ -243,20 +247,27 @@ observer/target pair. In the scene's `traversal` configuration:
   "interval_seconds": 0.1,
   "retention_seconds": 2,
   "observers_per_tick": 8,
-  "tracks_per_observer": 6
+  "tracks_per_observer": 6,
+  "character_tracks_per_observer": 6
 }
 ```
 
 Omit this setting to retain explicit-only observation behavior. It applies to
-registered navigation NPCs, not the player. Existing explicit pursuit tracks
+registered navigation NPCs as observers, with the player eligible as a target.
+`character_tracks_per_observer` defaults to zero for older scenes and accepts
+0..16; its capacity is separate from the 1..16 scenery slots. Crowds cannot evict
+all scenery tracks. Characters need no separate collider to be observable.
+Existing explicit pursuit tracks
 keep their independent settings and per-tick sampling, and take precedence over
-discovery for the same pair. The existing four-label UI remains for explicit
-tracks; automatic obstacle tracks do not flood it with labels.
+discovery for the same pair. Automatic tracks share compact world-scaled meters
+above their observer, not one screen-sized label per pair. Attended characters
+take precedence for that HUD pair; evidence and attention refer to the same target.
 
 Ownership and flow:
 
 1. `io-playground::ObstacleDiscoveryStage` queries nearby Item bounds. The supplied
-   policy selects nearest collidable non-character Items overlapping body height,
+   policy selects nearest collidable non-character Items and optionally nearest
+   characters using independent quotas, overlapping body height,
    ignoring floors below the feet and roofs overhead. It uses stable Item IDs and
    distance/ID ordering, not asset names, districts, or preselected obstacles.
 2. Plugin-owned `ObstacleObservations` rotates through observers, maintains bounded
@@ -270,6 +281,15 @@ Ownership and flow:
 4. The existing `RouteAttentionStage` correlates notices with remaining routes and
    submits the existing ticketed `Reconsider` request. The coordinator coalesces
    work and retains safe routes. Live collision safety remains unconditional.
+
+Character tracks publish the same `ItemNotice` observation facts and maintain
+their own memory, but do not enter scenery invalidation or the moving-obstacle
+emergency-braking policy. The example leaves patrol objectives unchanged. Plugins
+can read `Traversal::discovered_observations()` directly to supply their own
+social/combat responses; `observers_noticing(target)` counts current visual evidence
+above the attention threshold. This is not a chase command or a global visibility
+flag. The HUD uses that query for the player-seen count. Offscreen NPCs still
+participate in the same bounded observer schedule.
 
 When an initial search has no route yet, each retained track holds its latest
 qualified routing notice until there is a route or search result to evaluate.

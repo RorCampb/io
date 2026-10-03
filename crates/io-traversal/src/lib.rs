@@ -21,7 +21,7 @@ pub struct Movement<D: TraversalExecutor> {
     navigation: Navigation<D::Routes>,
     actors: Vec<coordinator::RouteCoordinator<D>>,
     budget: usize,
-    next_planner: usize,
+    admission: planning::AdmissionOrder,
     tick: u64,
     planner: planning::Planner<D::Routes>,
 }
@@ -48,7 +48,7 @@ impl<D: TraversalExecutor> Movement<D> {
             navigation: Navigation::new(domain)?,
             actors,
             budget,
-            next_planner: 0,
+            admission: Default::default(),
             tick: 0,
             planner: planning::Planner::new(PlanningMode::Inline),
         })
@@ -71,6 +71,19 @@ impl<D: TraversalExecutor> Movement<D> {
         request: Envelope<NavigationRequest>,
     ) -> Envelope<Result<NavigationTicket, NavigationError>> {
         let (actor, expected, goal) = match request.payload {
+            NavigationRequest::Prioritize {
+                ticket,
+                priority,
+                seconds,
+            } => {
+                let result = self
+                    .actors
+                    .iter_mut()
+                    .find(|c| c.executor.item() == ticket.actor)
+                    .ok_or(NavigationError::UnknownActor)
+                    .and_then(|c| c.prioritize(ticket, priority, seconds));
+                return request.reply(result);
+            }
             NavigationRequest::Start { actor, goal } => (actor, None, Some(goal)),
             NavigationRequest::Replace { ticket, goal } => (ticket.actor, Some(ticket), Some(goal)),
             NavigationRequest::Cancel { ticket } => (ticket.actor, Some(ticket), None),
@@ -176,13 +189,19 @@ impl<D: TraversalExecutor> Movement<D> {
         self.validate(world)?;
         self.tick = self.tick.checked_add(1).ok_or(Error::InvalidInput)?;
         self.planner.poll();
+        for actor in &mut self.actors {
+            actor.advance_priority(dt);
+            self.planner
+                .prioritize(actor.feedback.ticket.actor, actor.priority);
+        }
+        // Three priority slices, then one unconditional round-robin slice.
+        // Tie order rotates independently, so a constant urgent source cannot starve peers.
+        let selected = self
+            .admission
+            .select(self.actors.len(), self.tick, |i| self.actors[i].priority);
         let mut events = Vec::new();
         for (i, actor) in self.actors.iter_mut().enumerate() {
-            let budget = if i == self.next_planner {
-                self.budget
-            } else {
-                0
-            };
+            let budget = if i == selected { self.budget } else { 0 };
             actor.update(
                 &mut self.navigation,
                 world,
@@ -195,7 +214,6 @@ impl<D: TraversalExecutor> Movement<D> {
                 &mut events,
             )?;
         }
-        self.next_planner = (self.next_planner + 1) % self.actors.len().max(1);
         Ok(MovementFrame {
             tick: self.tick,
             actors: self.actors().collect(),

@@ -129,6 +129,7 @@ pub struct IoWorldMeter {
     pub x: f32,
     pub y: f32,
     pub value: f32,
+    pub width: f32,
     pub color: [f32; 3],
     pub label: [u8; 24],
 }
@@ -146,7 +147,7 @@ pub struct IoGameView {
     pub projectiles: [IoProjectileView; 4],
     pub meter_count: u32,
     pub meter_reserved: u32,
-    pub meters: [IoWorldMeter; 8],
+    pub meters: [IoWorldMeter; 1024],
 }
 
 /// Owned presentation text only; rules and validation remain in io-game.
@@ -170,7 +171,7 @@ pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameVie
         projectiles: [IoProjectileView::default(); 4],
         meter_count: 0,
         meter_reserved: 0,
-        meters: [IoWorldMeter::default(); 8],
+        meters: [IoWorldMeter::default(); 1024],
     };
     let Some(app) = (unsafe { app.as_ref() }) else {
         return false;
@@ -214,17 +215,39 @@ pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameVie
     }
     if let Some(camera) = app.state.camera(app.state.active_camera()) {
         if let Some(traversal) = game.traversal() {
-            for (i, track) in traversal.observations().iter().take(4).enumerate() {
-                let Some(anchor) = app.state.item_label_anchor(track.target()) else {
+            let squad = traversal.battle_diagnostics();
+            for (i, track) in traversal
+                .observations()
+                .iter()
+                .take(out.meters.len() / 2)
+                .enumerate()
+            {
+                let associated = if squad.is_empty() {
+                    track.target()
+                } else {
+                    track.observer()
+                };
+                let Some(anchor) = app.state.item_label_anchor(associated) else {
                     continue;
                 };
                 let Some((x, y)) = camera.project(anchor) else {
                     continue;
                 };
-                let stack = traversal.observations()[..i]
-                    .iter()
-                    .filter(|t| t.target() == track.target())
-                    .count();
+                let Some((edge, _)) = camera.project(anchor + camera.basis().0.scaled(1.4)) else {
+                    continue;
+                };
+                let width = (edge - x).abs();
+                if width < 5. {
+                    continue;
+                }
+                let stack = if squad.is_empty() {
+                    traversal.observations()[..i]
+                        .iter()
+                        .filter(|t| t.target() == track.target())
+                        .count()
+                } else {
+                    0
+                };
                 let rows = [
                     (
                         format!(
@@ -239,8 +262,9 @@ pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameVie
                 for (row, (label, value, color)) in rows.into_iter().enumerate() {
                     let mut meter = IoWorldMeter {
                         x,
-                        y: y - 68. - stack as f32 * 68. + row as f32 * 32.,
+                        y: y - width * (0.5 + stack as f32 * 0.5) + row as f32 * width * 0.24,
                         value,
+                        width,
                         color,
                         ..Default::default()
                     };
@@ -251,6 +275,43 @@ pub unsafe extern "C" fn io_app_game_view(app: *const IoApp, out: *mut IoGameVie
                             b' '
                         };
                     }
+                    out.meters[out.meter_count as usize] = meter;
+                    out.meter_count += 1;
+                }
+            }
+            for (actor, evidence, attention) in traversal.obstacle_meters() {
+                if out.meter_count as usize + 2 > out.meters.len() {
+                    break;
+                }
+                let Some(anchor) = app.state.item_label_anchor(actor) else {
+                    continue;
+                };
+                let Some((x, y)) = camera.project(anchor) else {
+                    continue;
+                };
+                let Some((edge, _)) = camera.project(anchor + camera.basis().0.scaled(1.4)) else {
+                    continue;
+                };
+                let width = (edge - x).abs();
+                if width < 5. {
+                    continue;
+                }
+                for (row, (value, color, label)) in [
+                    (evidence, [0.25, 0.85, 1.], b'E'),
+                    (attention, [1., 0.83, 0.2], b'A'),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let mut meter = IoWorldMeter {
+                        x,
+                        y: y - width * 0.5 + row as f32 * width * 0.24,
+                        width,
+                        value,
+                        color,
+                        ..Default::default()
+                    };
+                    meter.label[0] = label;
                     out.meters[out.meter_count as usize] = meter;
                     out.meter_count += 1;
                 }

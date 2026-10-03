@@ -6,6 +6,194 @@ use crate::{
 };
 use io_types::Vec3;
 
+fn battle_definition() -> io_playground::Definition {
+    let scene: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/dungeon/battle.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    serde_json::from_value(scene["traversal"].clone()).unwrap()
+}
+
+#[test]
+fn locomotion_profiles_share_named_and_default_allocations_but_not_inline_overrides() {
+    use std::sync::Arc;
+    let mut definition = battle_definition();
+    let guards = definition.locomotion_profiles["dungeon_guard"].clone();
+    let agents = &mut definition.navigation.as_mut().unwrap().agents;
+    agents[0].locomotion_profile = None;
+    agents[1].locomotion_profile = None;
+    let mut custom = guards.clone();
+    custom.walk_speed = 3.1;
+    agents[1].locomotion = Some(custom);
+    let resolved = definition.resolve_locomotion().unwrap();
+    assert!(Arc::ptr_eq(&resolved.default, &resolved.agents[0]));
+    for actor in &resolved.agents[2..] {
+        assert!(Arc::ptr_eq(actor, &resolved.agents[2]));
+        assert_eq!(actor.walk_speed, guards.walk_speed);
+    }
+    assert!(!Arc::ptr_eq(&resolved.agents[1], &resolved.agents[2]));
+    assert_eq!(resolved.agents[1].walk_speed, 3.1);
+    assert_eq!(
+        resolved.default.walk_speed,
+        definition.locomotion.walk_speed
+    );
+    let independent_load = definition.resolve_locomotion().unwrap();
+    assert!(!Arc::ptr_eq(&resolved.default, &independent_load.default));
+}
+
+#[test]
+fn locomotion_profile_resolution_rejects_unknown_ambiguous_and_invalid_definitions() {
+    let original = battle_definition();
+    let mut unknown = original.clone();
+    unknown.navigation.as_mut().unwrap().agents[0].locomotion_profile = Some("missing".into());
+    assert!(unknown
+        .resolve_locomotion()
+        .unwrap_err()
+        .contains("unknown locomotion profile"));
+    let mut ambiguous = original.clone();
+    ambiguous.navigation.as_mut().unwrap().agents[0].locomotion = Some(original.locomotion.clone());
+    assert!(ambiguous.resolve_locomotion().unwrap_err().contains("OR"));
+    let mut invalid = original.clone();
+    invalid
+        .locomotion_profiles
+        .get_mut("dungeon_guard")
+        .unwrap()
+        .walk_speed = f32::NAN;
+    assert!(invalid.resolve_locomotion().is_err());
+    let mut bad_name = original.clone();
+    bad_name
+        .locomotion_profiles
+        .insert(String::new(), original.locomotion.clone());
+    assert!(bad_name.resolve_locomotion().is_err());
+}
+
+#[test]
+fn stress_384_default_locomotion_is_one_shared_allocation() {
+    let scene: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/dungeon/stress-384.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let definition: io_playground::Definition =
+        serde_json::from_value(scene["traversal"].clone()).unwrap();
+    let resolved = definition.resolve_locomotion().unwrap();
+    assert_eq!(resolved.agents.len(), 384);
+    assert!(resolved
+        .agents
+        .iter()
+        .all(|a| std::sync::Arc::ptr_eq(a, &resolved.default)));
+}
+
+#[test]
+fn battle_doorways_allow_uninterrupted_grounded_walks_in_both_directions() {
+    let library = ModelLibrary::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/dungeon/battle.json"),
+    )
+    .unwrap();
+    let world = demo::world(&library).unwrap();
+    let game = demo::game(&library, &world).unwrap();
+    let hero = game.traversal().unwrap().player();
+    let guard = game.traversal().unwrap().battle_diagnostics()[0].actor;
+    for actor in [hero, guard] {
+        for height in [1.9, 1.15] {
+            let mut shape = world.item(actor).unwrap().character_body.unwrap();
+            shape.height = height;
+            for (outside, inside) in [
+                (Vec3::new(50., 55.5, 0.), Vec3::new(50., 46., 0.)),
+                (Vec3::new(66.5, 35., 0.), Vec3::new(62., 35., 0.)),
+            ] {
+                for (start, end) in [(outside, inside), (inside, outside)] {
+                    let delta = end - start;
+                    let count = (delta.dot(delta).sqrt() / 0.04).ceil() as u32;
+                    let step = delta.scaled(1. / count as f32);
+                    let mut position = start;
+                    for _ in 0..count {
+                        let walk =
+                            io_world::walk_character(&world, Some(actor), position, step, shape)
+                                .unwrap();
+                        assert!(
+                            walk.reached,
+                            "doorway blocks actor {actor}, height {height}, at {position:?}"
+                        );
+                        assert!(walk.support.is_some());
+                        assert!(
+                            walk.position.z.abs() < 0.005,
+                            "doorway must be flush with floor"
+                        );
+                        position = walk.position;
+                    }
+                    assert!((position - end).dot(position - end).sqrt() < 0.01);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn battle_radio_uses_reported_observations_without_granting_sight_and_forgets_hidden_target() {
+    let mut library = ModelLibrary::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/dungeon/battle.json"),
+    )
+    .unwrap();
+    library
+        .config
+        .traversal
+        .as_mut()
+        .unwrap()
+        .navigation
+        .as_mut()
+        .unwrap()
+        .planning = io_traversal::PlanningMode::Inline;
+    let mut world = demo::world(&library).unwrap();
+    let mut game = demo::game(&library, &world).unwrap();
+    for _ in 0..60 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+    }
+    assert!(game
+        .traversal()
+        .unwrap()
+        .battle_diagnostics()
+        .iter()
+        .all(|d| d.phase == io_playground::BattlePhase::Idle));
+    let player = game.traversal().unwrap().player();
+    assert!(world.set_pose_3d(player, Vec3::new(46., 46., 0.), Default::default()));
+    let mut reported_without_sight = false;
+    for _ in 0..180 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+        let t = game.traversal().unwrap();
+        reported_without_sight |= t.battle_diagnostics().iter().any(|d| {
+            matches!(
+                d.source,
+                Some(io_playground::ObservationSource::Reported { .. })
+            ) && t
+                .observations()
+                .iter()
+                .any(|o| o.observer() == d.actor && o.evidence() == 0. && o.attention() == 0.)
+        });
+    }
+    assert!(
+        reported_without_sight,
+        "radio should alert a guard without injecting visual awareness"
+    );
+    assert!(game.traversal().unwrap().battle_reports() > 0);
+    assert!(world.set_pose_3d(player, Vec3::new(29., 72., 0.), Default::default()));
+    for _ in 0..900 {
+        game.step(&mut world, &[], 1. / 60.).unwrap();
+    }
+    for d in game.traversal().unwrap().battle_diagnostics() {
+        assert_eq!(d.phase, io_playground::BattlePhase::Idle, "{d:?}");
+        assert!(
+            d.last_seen.is_none(),
+            "radio must not keep rebroadcasting old sightings as fresh"
+        );
+    }
+}
+
 #[test]
 fn stress_market_ramps_are_connected_walkable_geometry() {
     let library = ModelLibrary::load(
@@ -39,39 +227,43 @@ fn stress_market_ramps_are_connected_walkable_geometry() {
 
 #[test]
 fn stress_district_loads_large_population_with_valid_spawns_and_bounded_grid() {
-    let library = ModelLibrary::load(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/dungeon/stress-256.json"),
-    )
-    .unwrap();
-    let world = demo::world(&library).unwrap();
-    let game = demo::game(&library, &world).unwrap();
-    assert_eq!(game.traversal().unwrap().navigation_status().len(), 256);
-    for item in world.items().iter().filter(|i| i.character_body.is_some()) {
-        let p = item.transform.anchor;
-        assert!(
-            io_world::character_segment_clear(
-                &world,
-                Some(item.id),
-                p,
-                p,
-                item.character_body.unwrap()
-            ),
-            "invalid spawn {} {p:?}",
-            item.id
-        );
-        assert!(
-            io_world::character_support(
-                &world,
-                Some(item.id),
-                p,
-                item.character_body.unwrap(),
-                io_world::SupportProbe::CONTACT
-            )
-            .unwrap()
-            .is_some(),
-            "unsupported {}",
-            item.id
-        );
+    for (name, count) in [("stress-256.json", 256), ("stress-384.json", 384)] {
+        let library = ModelLibrary::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/dungeon")
+                .join(name),
+        )
+        .unwrap();
+        let world = demo::world(&library).unwrap();
+        let game = demo::game(&library, &world).unwrap();
+        assert_eq!(game.traversal().unwrap().navigation_status().len(), count);
+        for item in world.items().iter().filter(|i| i.character_body.is_some()) {
+            let p = item.transform.anchor;
+            assert!(
+                io_world::character_segment_clear(
+                    &world,
+                    Some(item.id),
+                    p,
+                    p,
+                    item.character_body.unwrap()
+                ),
+                "invalid spawn {} {p:?}",
+                item.id
+            );
+            assert!(
+                io_world::character_support(
+                    &world,
+                    Some(item.id),
+                    p,
+                    item.character_body.unwrap(),
+                    io_world::SupportProbe::CONTACT
+                )
+                .unwrap()
+                .is_some(),
+                "unsupported {}",
+                item.id
+            );
+        }
     }
 }
 
